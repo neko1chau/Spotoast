@@ -193,6 +193,36 @@ actor APIClient {
         return httpResponse
     }
 
+    func addToQueue(trackId: String, deviceId: String?) async throws {
+        var path = "/me/player/queue?uri=spotify:track:\(trackId)"
+        if let did = deviceId { path += "&device_id=\(did)" }
+        try await post(path)
+    }
+
+    func search(query: String, types: String = "track,artist,album", limit: Int = 20) async throws -> SearchResult {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return try await get("/search?q=\(encoded)&type=\(types)&limit=\(limit)")
+    }
+
+    func getArtistTopTracks(_ artistId: String) async throws -> [TrackItem] {
+        let response: ArtistTopTracksResponse = try await get("/artists/\(artistId)/top-tracks?market=from_token")
+        return response.tracks
+    }
+
+    func getArtistAlbums(_ artistId: String) async throws -> [AlbumItem] {
+        let response: ArtistAlbumsResponse = try await get("/artists/\(artistId)/albums?include_groups=album,single&limit=50")
+        return response.items
+    }
+
+    func getAlbumTracks(_ albumId: String) async throws -> [AlbumTrackItem] {
+        let response: AlbumTracksResponse = try await get("/albums/\(albumId)/tracks?limit=50")
+        return response.items
+    }
+
+    func getAlbum(_ albumId: String) async throws -> AlbumItem {
+        try await get("/albums/\(albumId)")
+    }
+
     private func get<T: Codable>(_ path: String) async throws -> T {
         guard let url = URL(string: "\(baseURL)\(path)") else { throw APIError.invalidURL(path) }
         var request = URLRequest(url: url)

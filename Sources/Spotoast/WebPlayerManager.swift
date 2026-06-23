@@ -15,6 +15,8 @@ class WebPlayerManager: NSObject, ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var isLoadingLyrics = false
     @Published var isSyncedLyrics = false
+    @Published var nextTracks: [Track] = []
+    @Published var previousTracks: [Track] = []
     private var lyricsTrackId: String?
 
     var deviceId: String?
@@ -218,6 +220,17 @@ class WebPlayerManager: NSObject, ObservableObject {
                 } catch {
                     self.error = "Repeat mode failed: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+
+    func addToQueue(trackId: String) {
+        guard let api else { return }
+        Task { @MainActor in
+            do {
+                try await api.addToQueue(trackId: trackId, deviceId: deviceId)
+            } catch {
+                self.error = "Add to queue failed: \(error.localizedDescription)"
             }
         }
     }
@@ -452,6 +465,15 @@ extension WebPlayerManager: WKScriptMessageHandler {
                     imageUrl: data["imageUrl"] ?? ""
                 )
             }
+
+            func parseTracks(_ key: String) -> [Track] {
+                (body[key] as? [[String: String]])?.map {
+                    Track(id: $0["id"] ?? "", name: $0["name"] ?? "",
+                          artists: $0["artists"] ?? "", imageUrl: $0["imageUrl"] ?? "")
+                } ?? []
+            }
+            nextTracks = parseTracks("nextTracks")
+            previousTracks = parseTracks("previousTracks")
 
             if paused {
                 stopProgressTimer()

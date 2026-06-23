@@ -57,10 +57,12 @@ struct TrackItem: Codable {
 }
 
 struct Artist: Codable {
+    let id: String?
     let name: String
 }
 
 struct Album: Codable {
+    let id: String?
     let images: [SpotifyImage]
 }
 
@@ -81,6 +83,73 @@ struct SavedTracksResponse: Codable {
     let items: [SavedTrack]
     let next: String?
     let total: Int
+}
+
+// MARK: - Search
+
+struct SearchResult: Codable {
+    let tracks: SearchTracks?
+    let artists: SearchArtists?
+    let albums: SearchAlbums?
+}
+
+struct SearchTracks: Codable {
+    let items: [TrackItem]
+}
+
+struct SearchArtists: Codable {
+    let items: [ArtistItem]
+}
+
+struct SearchAlbums: Codable {
+    let items: [AlbumItem]
+}
+
+struct ArtistItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let images: [SpotifyImage]?
+}
+
+struct AlbumItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let artists: [Artist]
+    let images: [SpotifyImage]?
+    let releaseDate: String?
+    let totalTracks: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, artists, images
+        case releaseDate = "release_date"
+        case totalTracks = "total_tracks"
+    }
+}
+
+struct ArtistTopTracksResponse: Codable {
+    let tracks: [TrackItem]
+}
+
+struct AlbumTracksResponse: Codable {
+    let items: [AlbumTrackItem]
+}
+
+struct AlbumTrackItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let artists: [Artist]
+    let durationMs: Int
+    let trackNumber: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, artists
+        case durationMs = "duration_ms"
+        case trackNumber = "track_number"
+    }
+}
+
+struct ArtistAlbumsResponse: Codable {
+    let items: [AlbumItem]
 }
 
 // MARK: - Lyrics (LRCLIB)

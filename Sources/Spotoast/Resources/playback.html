@@ -32,17 +32,20 @@ window.onSpotifyWebPlaybackSDKReady = () => {
   player.addListener('player_state_changed', state => {
     if (!state) return;
     const t = state.track_window.current_track;
+    const mapTrack = tr => ({
+      id: tr.id,
+      name: tr.name,
+      artists: tr.artists.map(a => a.name).join(', '),
+      imageUrl: (tr.album.images[0] && tr.album.images[0].url) || ''
+    });
     window.webkit.messageHandlers.spotifyBridge.postMessage({
       type: 'stateChanged',
       paused: state.paused,
       position: state.position,
       duration: state.duration,
-      track: {
-        id: t.id,
-        name: t.name,
-        artists: t.artists.map(a => a.name).join(', '),
-        imageUrl: (t.album.images[0] && t.album.images[0].url) || ''
-      }
+      track: mapTrack(t),
+      nextTracks: state.track_window.next_tracks.map(mapTrack),
+      previousTracks: state.track_window.previous_tracks.map(mapTrack)
     });
   });
 

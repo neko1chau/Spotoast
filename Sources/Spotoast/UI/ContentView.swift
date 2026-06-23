@@ -1,5 +1,32 @@
 import SwiftUI
 
+struct NavigateToArtistKey: EnvironmentKey {
+    static let defaultValue: (String) -> Void = { _ in }
+}
+struct NavigateToAlbumKey: EnvironmentKey {
+    static let defaultValue: (String) -> Void = { _ in }
+}
+extension EnvironmentValues {
+    var navigateToArtist: (String) -> Void {
+        get { self[NavigateToArtistKey.self] }
+        set { self[NavigateToArtistKey.self] = newValue }
+    }
+    var navigateToAlbum: (String) -> Void {
+        get { self[NavigateToAlbumKey.self] }
+        set { self[NavigateToAlbumKey.self] = newValue }
+    }
+}
+
+struct NavState {
+    var showingLikedSongs: Bool
+    var selectedPlaylistId: String?
+    var searchQuery: String
+    var selectedArtistId: String?
+    var selectedAlbumId: String?
+    var showSettings: Bool
+    var showQueue: Bool
+}
+
 struct ContentView: View {
     @EnvironmentObject var authManager: AuthManager
     @StateObject private var player = WebPlayerManager()
@@ -11,6 +38,11 @@ struct ContentView: View {
     @State private var showAlert = false
     @State private var showFullPlayer = false
     @State private var showSettings = false
+    @State private var searchQuery = ""
+    @State private var selectedArtistId: String?
+    @State private var selectedAlbumId: String?
+    @State private var showQueue = false
+    @State private var navStack: [NavState] = []
 
     var body: some View {
         Group {
@@ -57,13 +89,44 @@ struct ContentView: View {
                         sidebar
                             .frame(minWidth: 240)
                     } detail: {
-                        if showSettings {
+                        if showQueue {
+                            QueueView()
+                                .environmentObject(player)
+                        } else if showSettings {
                             SettingsView {
                                 authManager.logout()
                                 player.cleanup()
                                 showSettings = false
                             }
                             .environmentObject(authManager)
+                        } else if let artistId = selectedArtistId {
+                            detailWithBack {
+                                popNav()
+                            } content: {
+                                ArtistView(artistId: artistId, onAlbum: { pushNav(); selectedArtistId = nil; selectedAlbumId = $0 })
+                                    .environmentObject(apiLoader)
+                                    .environmentObject(player)
+                            }
+                        } else if let albumId = selectedAlbumId {
+                            detailWithBack {
+                                popNav()
+                            } content: {
+                                AlbumView(albumId: albumId)
+                                    .environmentObject(apiLoader)
+                                    .environmentObject(player)
+                            }
+                        } else if !searchQuery.isEmpty {
+                            detailWithBack {
+                                if !navStack.isEmpty { popNav() } else { searchQuery = "" }
+                            } content: {
+                                SearchResultsView(
+                                    query: searchQuery,
+                                    onArtist: { selectedArtistId = $0 },
+                                    onAlbum: { selectedAlbumId = $0 }
+                                )
+                                .environmentObject(apiLoader)
+                                .environmentObject(player)
+                            }
                         } else if showingLikedSongs {
                             LikedSongsView()
                                 .environmentObject(apiLoader)
@@ -77,8 +140,28 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .environment(\.navigateToArtist, { id in
+                        pushNav()
+                        searchQuery = ""
+                        selectedPlaylistId = nil
+                        showingLikedSongs = false
+                        showSettings = false
+                        showQueue = false
+                        selectedAlbumId = nil
+                        selectedArtistId = id
+                    })
+                    .environment(\.navigateToAlbum, { id in
+                        pushNav()
+                        searchQuery = ""
+                        selectedPlaylistId = nil
+                        showingLikedSongs = false
+                        showSettings = false
+                        showQueue = false
+                        selectedArtistId = nil
+                        selectedAlbumId = id
+                    })
 
-                    NowPlayingBar(showFullPlayer: $showFullPlayer)
+                    NowPlayingBar(showFullPlayer: $showFullPlayer, showQueue: $showQueue)
                         .environmentObject(player)
                         .frame(height: 64)
                 }
@@ -120,6 +203,33 @@ struct ContentView: View {
             if !showing { player.error = nil }
         }
         .modifier(PlayerKeyboardShortcuts(player: player))
+    }
+
+    private func pushNav() {
+        navStack.append(NavState(
+            showingLikedSongs: showingLikedSongs,
+            selectedPlaylistId: selectedPlaylistId,
+            searchQuery: searchQuery,
+            selectedArtistId: selectedArtistId,
+            selectedAlbumId: selectedAlbumId,
+            showSettings: showSettings,
+            showQueue: showQueue
+        ))
+    }
+
+    private func popNav() {
+        guard let prev = navStack.popLast() else {
+            selectedArtistId = nil
+            selectedAlbumId = nil
+            return
+        }
+        showingLikedSongs = prev.showingLikedSongs
+        selectedPlaylistId = prev.selectedPlaylistId
+        searchQuery = prev.searchQuery
+        selectedArtistId = prev.selectedArtistId
+        selectedAlbumId = prev.selectedAlbumId
+        showSettings = prev.showSettings
+        showQueue = prev.showQueue
     }
 
     private var emptyState: some View {
@@ -168,12 +278,70 @@ struct ContentView: View {
         .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
     }
 
+    private func detailWithBack<Content: View>(action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: action) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary.opacity(0.7))
+                        .frame(width: 28, height: 28)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                .padding(.leading, 12)
+                .padding(.vertical, 6)
+                Spacer()
+            }
+            content()
+        }
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                TextField("Search", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .onChange(of: searchQuery) { query in
+                        selectedPlaylistId = nil
+                        showingLikedSongs = false
+                        showSettings = false
+                        selectedArtistId = nil
+                        selectedAlbumId = nil
+                        apiLoader.search(query: query)
+                    }
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.primary.opacity(0.04))
+            .cornerRadius(8)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
             List(selection: Binding<String?>(
                 get: { showingLikedSongs ? "__liked__" : selectedPlaylistId },
                 set: { newValue in
                     showSettings = false
+                    showQueue = false
+                    searchQuery = ""
+                    selectedArtistId = nil
+                    selectedAlbumId = nil
                     if newValue == "__liked__" {
                         showingLikedSongs = true
                         selectedPlaylistId = nil
@@ -313,6 +481,10 @@ class APILoader: ObservableObject {
     @Published var playlists: [Playlist] = []
     @Published var playlistTracks: [String: [PlaylistTrack]] = [:]
     @Published var savedTracks: [SavedTrack] = []
+    @Published var searchTracks: [TrackItem] = []
+    @Published var searchArtists: [ArtistItem] = []
+    @Published var searchAlbums: [AlbumItem] = []
+    @Published var isSearching = false
     @Published var error: String?
     @Published var isLoadingPlaylists = false
     @Published var isLoadingTracks = false
@@ -411,6 +583,36 @@ class APILoader: ObservableObject {
         } catch {
             self.error = "Failed to load Liked Songs: \(error.localizedDescription)"
             isLoadingSavedTracks = false
+        }
+    }
+
+    private var searchTask: Task<Void, Never>?
+
+    func search(query: String) {
+        searchTask?.cancel()
+        guard !query.isEmpty else {
+            searchTracks = []; searchArtists = []; searchAlbums = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let api = self?.api else { return }
+            do {
+                let result = try await api.search(query: query)
+                if !Task.isCancelled {
+                    self?.searchTracks = result.tracks?.items ?? []
+                    self?.searchArtists = result.artists?.items ?? []
+                    self?.searchAlbums = result.albums?.items ?? []
+                    self?.isSearching = false
+                }
+            } catch {
+                if !Task.isCancelled {
+                    self?.error = "Search failed: \(error.localizedDescription)"
+                    self?.isSearching = false
+                }
+            }
         }
     }
 }
