@@ -35,6 +35,12 @@ To build a universal binary (Apple Silicon + Intel):
 swift build --arch arm64 --arch x86_64
 ```
 
+If macOS shows "Spotoast is damaged and can't be opened", run:
+
+```bash
+xattr -cr /Applications/Spotoast.app
+```
+
 On first launch, paste your Client ID into the setup screen and click Save, then log in with your Spotify account.
 
 Alternatively, set the environment variable before running:

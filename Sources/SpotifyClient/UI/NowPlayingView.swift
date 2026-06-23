@@ -285,32 +285,35 @@ struct NowPlayingBar: View {
         .background(.ultraThinMaterial)
     }
 
-    @ViewBuilder
     private var trackInfo: some View {
-        if let track = player.currentTrack {
-            HStack(spacing: 12) {
-                AsyncImage(url: URL(string: track.imageUrl)) { img in
-                    img.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.08))
-                }
-                .frame(width: 44, height: 44)
-                .cornerRadius(6)
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
+        Group {
+            if let track = player.currentTrack {
+                HStack(spacing: 12) {
+                    AsyncImage(url: URL(string: track.imageUrl)) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.primary.opacity(0.08))
+                    }
+                    .frame(width: 44, height: 44)
+                    .cornerRadius(6)
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.name)
-                        .font(.system(.body, weight: .medium))
-                        .lineLimit(1)
-                    Text(track.artists)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.name)
+                            .font(.system(.body, weight: .medium))
+                            .lineLimit(1)
+                        Text(track.artists)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
+            } else {
+                Color.clear.frame(height: 44)
             }
-            .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
         }
     }
 
