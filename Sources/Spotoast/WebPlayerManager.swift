@@ -9,7 +9,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     @Published var position: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var error: String?
-    @Published var sdkStatus: String = "Loading SDK..."
+    @Published var sdkStatus: String = "Starting..."
     @Published var isShuffled = false
     @Published var repeatMode: RepeatMode = .off
     @Published var lyrics: [LyricLine] = []
@@ -101,7 +101,7 @@ class WebPlayerManager: NSObject, ObservableObject {
         }
         if !didLoadPage {
             didLoadPage = true
-            sdkStatus = "Loading SDK..."
+            sdkStatus = "Starting..."
             loadPlaybackPage(token: token)
         } else {
             updateToken(token)
@@ -430,7 +430,7 @@ extension WebPlayerManager: WKScriptMessageHandler {
         case "ready":
             deviceId = body["deviceId"] as? String
             isReady = true
-            sdkStatus = "Connected"
+            sdkStatus = "Ready"
             if let api, let did = deviceId, !didTransferPlayback {
                 didTransferPlayback = true
                 Task { @MainActor in

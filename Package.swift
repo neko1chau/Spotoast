@@ -10,7 +10,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Spotoast",
-            path: "Sources/SpotifyClient",
+            path: "Sources/Spotoast",
             exclude: ["Info.plist"],
             resources: [
                 .process("Resources")

@@ -130,6 +130,7 @@ struct PlaylistDetailView: View {
                         }
                     }
                     .padding(.horizontal)
+                    .padding(.top, 8)
                     .padding(.bottom, 16)
                 }
             }
@@ -213,6 +214,7 @@ struct LikedSongsView: View {
                         }
                     }
                     .padding(.horizontal)
+                    .padding(.top, 8)
                     .padding(.bottom, 16)
                 }
             }
@@ -379,18 +381,36 @@ struct NowPlayingBar: View {
         .frame(height: 3)
     }
 
+    @State private var volumeHovered = false
+
     private var volumeControl: some View {
         HStack(spacing: 6) {
             Image(systemName: volume > 0 ? "speaker.fill" : "speaker.slash.fill")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .frame(width: 14)
-            Slider(value: $volume, in: 0...1)
-                .controlSize(.mini)
-                .frame(width: 80)
-                .onChange(of: volume) { newValue in
-                    player.setVolume(newValue)
+            GeometryReader { geo in
+                let barH: CGFloat = volumeHovered ? 5 : 3
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.12))
+                    Capsule()
+                        .fill(Color.primary.opacity(0.5))
+                        .frame(width: geo.size.width * volume)
                 }
+                .frame(height: barH)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        volume = max(0, min(1, v.location.x / geo.size.width))
+                        player.setVolume(volume)
+                    }
+                )
+                .onHover { volumeHovered = $0 }
+                .animation(.easeOut(duration: 0.15), value: volumeHovered)
+            }
+            .frame(width: 80, height: 16)
         }
     }
 }

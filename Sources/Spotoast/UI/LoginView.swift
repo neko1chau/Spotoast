@@ -51,7 +51,7 @@ struct LoginView: View {
             Text("Enter your Spotify Client ID")
                 .font(.headline)
 
-            Text("从 developer.spotify.com 创建 App 获取")
+            Text("Create an app at developer.spotify.com")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var alertMessage = ""
     @State private var showAlert = false
     @State private var showFullPlayer = false
+    @State private var showSettings = false
 
     var body: some View {
         Group {
@@ -56,7 +57,14 @@ struct ContentView: View {
                         sidebar
                             .frame(minWidth: 240)
                     } detail: {
-                        if showingLikedSongs {
+                        if showSettings {
+                            SettingsView {
+                                authManager.logout()
+                                player.cleanup()
+                                showSettings = false
+                            }
+                            .environmentObject(authManager)
+                        } else if showingLikedSongs {
                             LikedSongsView()
                                 .environmentObject(apiLoader)
                                 .environmentObject(player)
@@ -135,6 +143,7 @@ struct ContentView: View {
             List(selection: Binding<String?>(
                 get: { showingLikedSongs ? "__liked__" : selectedPlaylistId },
                 set: { newValue in
+                    showSettings = false
                     if newValue == "__liked__" {
                         showingLikedSongs = true
                         selectedPlaylistId = nil
@@ -224,12 +233,15 @@ struct ContentView: View {
                     .foregroundColor(.orange)
                 }
 
-                Button("Logout") {
-                    authManager.logout()
-                    player.cleanup()
+                Button {
+                    showSettings = true
+                    showingLikedSongs = false
+                    selectedPlaylistId = nil
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .font(.caption)
                 .foregroundColor(.secondary)
             }
             .padding(.horizontal, 16)
