@@ -103,10 +103,11 @@ struct ContentView: View {
                             detailWithBack {
                                 popNav()
                             } content: {
-                                ArtistView(artistId: artistId, onAlbum: { pushNav(); selectedArtistId = nil; selectedAlbumId = $0 })
+                                ArtistView(artistId: artistId, onAlbum: { id in withAnimation(.easeInOut(duration: 0.25)) { pushNav(); selectedArtistId = nil; selectedAlbumId = id } })
                                     .environmentObject(apiLoader)
                                     .environmentObject(player)
                             }
+                            .transition(.opacity)
                         } else if let albumId = selectedAlbumId {
                             detailWithBack {
                                 popNav()
@@ -115,6 +116,7 @@ struct ContentView: View {
                                     .environmentObject(apiLoader)
                                     .environmentObject(player)
                             }
+                            .transition(.opacity)
                         } else if !searchQuery.isEmpty {
                             detailWithBack {
                                 if !navStack.isEmpty { popNav() } else { searchQuery = "" }
@@ -127,6 +129,7 @@ struct ContentView: View {
                                 .environmentObject(apiLoader)
                                 .environmentObject(player)
                             }
+                            .transition(.opacity)
                         } else if showingLikedSongs {
                             LikedSongsView()
                                 .environmentObject(apiLoader)
@@ -141,24 +144,28 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.navigateToArtist, { id in
-                        pushNav()
-                        searchQuery = ""
-                        selectedPlaylistId = nil
-                        showingLikedSongs = false
-                        showSettings = false
-                        showQueue = false
-                        selectedAlbumId = nil
-                        selectedArtistId = id
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            pushNav()
+                            searchQuery = ""
+                            selectedPlaylistId = nil
+                            showingLikedSongs = false
+                            showSettings = false
+                            showQueue = false
+                            selectedAlbumId = nil
+                            selectedArtistId = id
+                        }
                     })
                     .environment(\.navigateToAlbum, { id in
-                        pushNav()
-                        searchQuery = ""
-                        selectedPlaylistId = nil
-                        showingLikedSongs = false
-                        showSettings = false
-                        showQueue = false
-                        selectedArtistId = nil
-                        selectedAlbumId = id
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            pushNav()
+                            searchQuery = ""
+                            selectedPlaylistId = nil
+                            showingLikedSongs = false
+                            showSettings = false
+                            showQueue = false
+                            selectedArtistId = nil
+                            selectedAlbumId = id
+                        }
                     })
 
                     NowPlayingBar(showFullPlayer: $showFullPlayer, showQueue: $showQueue)
@@ -281,7 +288,7 @@ struct ContentView: View {
     private func detailWithBack<Content: View>(action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Button(action: action) {
+                Button { withAnimation(.easeInOut(duration: 0.25)) { action() } } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary.opacity(0.7))
