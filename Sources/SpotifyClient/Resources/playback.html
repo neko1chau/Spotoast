@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+<script>
+let player;
+let currentDeviceId;
+window.spotifyToken = '<!--TOKEN-->';
+
+window.onSpotifyWebPlaybackSDKReady = () => {
+  player = new Spotify.Player({
+    name: 'Spotoast',
+    getOAuthToken: cb => cb(window.spotifyToken),
+    volume: 0.5
+  });
+
+  player.addListener('ready', ({ device_id }) => {
+    currentDeviceId = device_id;
+    window.webkit.messageHandlers.spotifyBridge.postMessage({
+      type: 'ready', deviceId: device_id
+    });
+  });
+
+  player.addListener('not_ready', ({ device_id }) => {
+    window.webkit.messageHandlers.spotifyBridge.postMessage({
+      type: 'error', message: 'Device went offline: ' + device_id
+    });
+  });
+
+  player.addListener('player_state_changed', state => {
+    if (!state) return;
+    const t = state.track_window.current_track;
+    window.webkit.messageHandlers.spotifyBridge.postMessage({
+      type: 'stateChanged',
+      paused: state.paused,
+      position: state.position,
+      duration: state.duration,
+      track: {
+        id: t.id,
+        name: t.name,
+        artists: t.artists.map(a => a.name).join(', '),
+        imageUrl: (t.album.images[0] && t.album.images[0].url) || ''
+      }
+    });
+  });
+
+  ['initialization_error', 'authentication_error', 'account_error', 'playback_error'].forEach(evt => {
+    player.addListener(evt, ({ message }) => {
+      window.webkit.messageHandlers.spotifyBridge.postMessage({
+        type: 'error', message: '[' + evt + '] ' + message
+      });
+    });
+  });
+
+  player.activateElement();
+  player.connect().then(success => {
+    if (!success) {
+      window.webkit.messageHandlers.spotifyBridge.postMessage({
+        type: 'error', message: 'SDK connect() returned false'
+      });
+    }
+  });
+};
+
+function updateToken(token) {
+  window.spotifyToken = token;
+}
+
+function togglePlay()  { player && player.togglePlay(); }
+function nextTrack()   { player && player.nextTrack(); }
+function previousTrack() { player && player.previousTrack(); }
+function seekTo(ms)    { player && player.seek(ms); }
+function changeVolume(vol) { player && player.setVolume(vol); }
+
+function startPlayback(jsonStr) {
+  const body = JSON.parse(jsonStr);
+  const url = currentDeviceId
+    ? 'https://api.spotify.com/v1/me/player/play?device_id=' + currentDeviceId
+    : 'https://api.spotify.com/v1/me/player/play';
+  fetch(url, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + window.spotifyToken
+    }
+  }).then(r => {
+    if (!r.ok) {
+      r.text().then(t => {
+        window.webkit.messageHandlers.spotifyBridge.postMessage({
+          type: 'error', message: 'Play API error ' + r.status + ': ' + t.substring(0, 200)
+        });
+      });
+    }
+  }).catch(e => {
+    window.webkit.messageHandlers.spotifyBridge.postMessage({
+      type: 'error', message: 'Fetch error: ' + e.message
+    });
+  });
+}
+</script>
+</head>
+<body></body>
+</html>
