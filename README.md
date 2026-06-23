@@ -6,8 +6,9 @@ A native macOS Spotify client built with SwiftUI and the Spotify Web Playback SD
 
 - Spotify Connect playback via Web Playback SDK
 - Playlist browsing and Liked Songs
-- Synced lyrics display
+- Synced lyrics display (powered by [LRCLIB](https://lrclib.net))
 - Full-screen now playing view with immersive title bar
+- Dark mode support (Auto / Light / Dark)
 - Keyboard shortcuts (Space, Arrow keys)
 
 ## Requirements
