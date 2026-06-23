@@ -13,7 +13,7 @@ struct Playlist: Identifiable, Codable {
     let description: String?
     let owner: Owner
     let images: [SpotifyImage]?
-    let tracks: TracksRef
+    let tracks: TracksRef?
 
     struct Owner: Codable {
         let displayName: String?

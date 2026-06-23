@@ -95,8 +95,8 @@ struct ContentView: View {
         .frame(minHeight: 500)
         .background {
             HiddenWebView(manager: player)
-                .frame(width: 300, height: 300)
-                .opacity(0)
+                .frame(width: 1, height: 1)
+                .offset(x: -9999)
                 .allowsHitTesting(false)
         }
         .onAppear {
@@ -194,7 +194,7 @@ struct ContentView: View {
                                 Text(playlist.name)
                                     .lineLimit(1)
                                     .font(.system(.body))
-                                Text("\(playlist.tracks.total) tracks")
+                                Text("\(playlist.tracks?.total ?? 0) tracks")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }

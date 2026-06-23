@@ -20,8 +20,9 @@ A native macOS Spotify client built with SwiftUI and the Spotify Web Playback SD
 ## Setup
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create a new app.
-2. Add `spotoast://callback` as a Redirect URI in your app settings.
-3. Copy your **Client ID**.
+2. **Under "APIs used", make sure both `Web API` and `Web Playback SDK` are enabled.** Without this, playback will not work.
+3. Add `spotoast://callback` as a Redirect URI in your app settings.
+4. Copy your **Client ID**.
 
 ## Build & Run
 
