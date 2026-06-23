@@ -76,7 +76,7 @@ struct ContentView: View {
                             emptyState
                         }
                     }
-                    .frame(minWidth: 750, minHeight: 400)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     NowPlayingBar(showFullPlayer: $showFullPlayer)
                         .environmentObject(player)
@@ -126,16 +126,46 @@ struct ContentView: View {
         VStack(spacing: 16) {
             if !player.isReady {
                 ContentPulse(symbol: "wifi", label: "Connecting to Spotify")
+            } else if let track = player.currentTrack {
+                nowPlayingCard(track)
             } else {
                 Image(systemName: "music.quarternote.3")
                     .font(.system(size: 48))
-                    .foregroundColor(.secondary.opacity(0.5))
+                    .foregroundColor(.secondary.opacity(0.3))
                 Text("Select a playlist to start")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary.opacity(0.5))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func nowPlayingCard(_ track: Track) -> some View {
+        VStack(spacing: 16) {
+            AsyncImage(url: URL(string: track.imageUrl)) { img in
+                img.resizable().aspectRatio(contentMode: .fit)
+            } placeholder: {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.primary.opacity(0.05))
+                    .aspectRatio(1, contentMode: .fit)
+            }
+            .frame(width: 200, height: 200)
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+
+            VStack(spacing: 4) {
+                Text(track.name)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Text(track.artists)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
     }
 
     private var sidebar: some View {
@@ -206,6 +236,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollIndicators(.never)
 
             Divider()
 
@@ -383,3 +414,4 @@ class APILoader: ObservableObject {
         }
     }
 }
+

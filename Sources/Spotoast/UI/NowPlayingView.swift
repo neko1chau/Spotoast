@@ -358,14 +358,16 @@ struct NowPlayingBar: View {
         }
     }
 
+    @State private var barHovered = false
+
     private var progressSlider: some View {
         GeometryReader { geo in
             let progress = player.duration > 0 ? player.position / player.duration : 0
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(Color.primary.opacity(0.12))
+                    .fill(Color.primary.opacity(barHovered ? 0.12 : 0.04))
                 Rectangle()
-                    .fill(Color.green)
+                    .fill(Color.green.opacity(barHovered ? 1.0 : 0.4))
                     .frame(width: geo.size.width * progress)
             }
             .contentShape(Rectangle())
@@ -378,7 +380,9 @@ struct NowPlayingBar: View {
                     }
             )
         }
-        .frame(height: 3)
+        .frame(height: barHovered ? 4 : 2)
+        .onHover { barHovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: barHovered)
     }
 
     @State private var volumeHovered = false
