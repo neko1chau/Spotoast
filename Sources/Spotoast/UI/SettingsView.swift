@@ -115,12 +115,9 @@ struct SettingsView: View {
                 .font(.system(size: 13))
 
             if updateManager.isChecking {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.5)
-                    Text("Checking...")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
+                Text("Checking...")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             } else if updateManager.hasUpdate, let version = updateManager.latestVersion {
                 HStack {
                     HStack(spacing: 6) {
@@ -130,7 +127,9 @@ struct SettingsView: View {
                     }
                     Spacer()
                     if updateManager.isDownloading {
-                        ProgressView().scaleEffect(0.5)
+                        Text("Downloading...")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     } else {
                         Button("Update") {
                             Task { await updateManager.downloadAndInstall() }

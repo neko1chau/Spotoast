@@ -47,7 +47,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authManager.isLoading {
-                ProgressView("Authenticating...")
+                ContentPulse(symbol: "person.circle", label: "Authenticating")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if authManager.isAuthenticated,
                       let token = authManager.accessToken {
@@ -360,13 +360,7 @@ struct ContentView: View {
             )) {
                 Section {
                     Label {
-                        HStack {
-                            Text("Liked Songs")
-                            Spacer()
-                            if apiLoader.isLoadingSavedTracks {
-                                ProgressView().scaleEffect(0.5)
-                            }
-                        }
+                        Text("Liked Songs")
                     } icon: {
                         Image(systemName: "heart.fill")
                             .foregroundColor(.pink)
@@ -378,11 +372,10 @@ struct ContentView: View {
 
                 Section {
                     if apiLoader.isLoadingPlaylists {
-                        HStack {
-                            ProgressView().scaleEffect(0.7)
-                            Text("Loading...").foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
+                        Text("Loading...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
                     }
                     ForEach(apiLoader.playlists) { playlist in
                         HStack(spacing: 10) {
