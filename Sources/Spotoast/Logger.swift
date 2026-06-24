@@ -16,9 +16,13 @@ final class AppLogger {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
+    private let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
     func log(_ message: String, level: String = "INFO") {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let timestamp = formatter.string(from: Date())
         let line = "[\(timestamp)] [\(level)] \(message)\n"
 
@@ -29,8 +33,6 @@ final class AppLogger {
                 fm.createFile(atPath: path, contents: nil)
             }
             guard let fh = FileHandle(forWritingAtPath: path) else { return }
-            defer { fh.closeFile() }
-
             let size = fh.seekToEndOfFile()
             if size > UInt64(maxSize) {
                 fh.closeFile()
@@ -41,6 +43,7 @@ final class AppLogger {
                 fh2.closeFile()
             } else {
                 fh.write(line.data(using: .utf8)!)
+                fh.closeFile()
             }
         }
     }

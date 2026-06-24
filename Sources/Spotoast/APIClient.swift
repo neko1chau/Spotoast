@@ -94,13 +94,12 @@ actor APIClient {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = bodyData
-        let (resData, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401,
-           let handler = onUnauthorized, await handler() {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: request)
-            try checkResponse(retryData, retryResponse, path: path)
-            return
+        var (resData, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (resData, response) = try await session.data(for: request)
+            }
         }
         try checkResponse(resData, response, path: path)
     }
@@ -119,13 +118,12 @@ actor APIClient {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = bodyData
-        let (resData, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401,
-           let handler = onUnauthorized, await handler() {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: request)
-            try checkResponse(retryData, retryResponse, path: "/me/player/play")
-            return
+        var (resData, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (resData, response) = try await session.data(for: request)
+            }
         }
         try checkResponse(resData, response, path: "/me/player/play")
     }
@@ -309,7 +307,7 @@ actor APIClient {
         guard let parsed = try? JSONDecoder().decode(NetEaseLyric.self, from: lyricData),
               let lrc = parsed.lrc?.lyric, !lrc.isEmpty else { return nil }
 
-        let hasTiming = lrc.hasPrefix("[") && lrc.contains("]")
+        let hasTiming = lrc.range(of: #"\[\d{1,3}:\d{2}"#, options: .regularExpression) != nil
         return LrcLibResponse(
             syncedLyrics: hasTiming ? lrc : nil,
             plainLyrics: hasTiming ? nil : lrc

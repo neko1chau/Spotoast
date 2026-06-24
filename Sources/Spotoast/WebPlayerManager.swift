@@ -119,17 +119,18 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     func updateToken(_ token: String) {
         lastToken = token
-        if let data = try? JSONSerialization.data(withJSONObject: token),
-           let json = String(data: data, encoding: .utf8) {
-            evaluate("updateToken(\(json))")
-        }
+        let escaped = token
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        evaluate("updateToken('\(escaped)')")
     }
 
     // MARK: - Playback Control (via APIClient)
 
     private func isDeviceNotFound(_ error: Error) -> Bool {
         let desc = error.localizedDescription
-        return desc.contains("404") && desc.contains("Device not found")
+        return desc.contains("404")
     }
 
     private func handleDeviceNotFound() {
@@ -155,6 +156,7 @@ class WebPlayerManager: NSObject, ObservableObject {
                     if isDeviceNotFound(error) {
                         handleDeviceNotFound()
                     } else {
+                        logger.error("Toggle play failed: \(error.localizedDescription)")
                         self.error = "Toggle play failed: \(error.localizedDescription)"
                     }
                 }
@@ -173,6 +175,7 @@ class WebPlayerManager: NSObject, ObservableObject {
                     if isDeviceNotFound(error) {
                         handleDeviceNotFound()
                     } else {
+                        logger.error("Next track failed: \(error.localizedDescription)")
                         self.error = "Next track failed: \(error.localizedDescription)"
                     }
                 }
@@ -191,6 +194,7 @@ class WebPlayerManager: NSObject, ObservableObject {
                     if isDeviceNotFound(error) {
                         handleDeviceNotFound()
                     } else {
+                        logger.error("Previous track failed: \(error.localizedDescription)")
                         self.error = "Previous track failed: \(error.localizedDescription)"
                     }
                 }
@@ -371,7 +375,8 @@ class WebPlayerManager: NSObject, ObservableObject {
         let cacheEnabled = UserDefaults.standard.bool(forKey: "cacheLyrics")
         lyricsTask = Task { @MainActor in
             if cacheEnabled, let cached = await LyricsCache.load(trackId: trackId),
-               cached.syncedLyrics != nil && !(cached.syncedLyrics?.isEmpty ?? true) {
+               (cached.syncedLyrics != nil && !(cached.syncedLyrics?.isEmpty ?? true)) ||
+               (cached.plainLyrics != nil && !(cached.plainLyrics?.isEmpty ?? true)) {
                 guard !Task.isCancelled, lyricsTrackId == trackId else { return }
                 applyLyrics(cached)
                 isLoadingLyrics = false
@@ -562,12 +567,16 @@ extension WebPlayerManager: WKScriptMessageHandler {
             duration = TimeInterval(body["duration"] as? Int ?? 0) / 1000
             lastPositionUpdate = paused ? nil : Date()
             if let data = body["track"] as? [String: String] {
-                currentTrack = Track(
+                let newTrack = Track(
                     id: data["id"] ?? "",
                     name: data["name"] ?? "",
                     artists: data["artists"] ?? "",
                     imageUrl: data["imageUrl"] ?? ""
                 )
+                if currentTrack?.id != newTrack.id {
+                    logger.info("Track: \(newTrack.name) — \(newTrack.artists)")
+                }
+                currentTrack = newTrack
             }
 
             func parseTracks(_ key: String) -> [Track] {
@@ -597,6 +606,12 @@ extension WebPlayerManager: WKScriptMessageHandler {
             let msg = body["message"] as? String ?? "Unknown error"
             if msg.contains("playback_error") {
                 logger.warn("playback_error (non-fatal): \(msg)")
+                break
+            }
+            if msg.contains("Invalid token scopes") || msg.contains("authentication_error") {
+                logger.error("SDK auth error (re-login required): \(msg)")
+                sdkStatus = "Scope error — please logout and re-login"
+                error = "Token scopes outdated. Please logout from Settings and re-login to fix."
                 break
             }
             sdkStatus = "Error: \(msg)"
@@ -635,6 +650,7 @@ extension WebPlayerManager: WKNavigationDelegate {
     nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         Task { @MainActor in
             self.processCrashed = true
+            logger.error("Web player process terminated — playback may not work")
             self.error = "Web player process terminated — playback may not work"
         }
     }

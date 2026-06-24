@@ -167,8 +167,8 @@ class AuthManager: NSObject, ObservableObject {
         isAuthenticated = false
         error = nil
         isLoading = false
-        onTokenRefresh = nil
         clearTokens()
+        logger.info("User logged out")
     }
 
     private func restoreTokens() {
