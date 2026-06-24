@@ -5,10 +5,18 @@ A native macOS Spotify client built with SwiftUI and the Spotify Web Playback SD
 ## Features
 
 - Spotify Connect playback via Web Playback SDK
-- Playlist browsing and Liked Songs
-- Synced lyrics display (powered by [LRCLIB](https://lrclib.net))
+- Playlist browsing, Liked Songs, search, artist & album pages
+- Synced lyrics display (powered by [LRCLIB](https://lrclib.net) + NetEase Music)
 - Full-screen now playing view with immersive title bar
+- Floating mini player with real-time lyrics
+- Media key support (play/pause/next/prev)
+- Now Playing integration (macOS media widget)
+- Queue management with drag-to-reorder
+- Playlist & lyrics disk cache with offline fallback
+- Simple sidebar mode (shows Liked Songs directly)
+- Liquid Glass effects on macOS 26+
 - Dark mode support (Auto / Light / Dark)
+- Application logging for diagnostics (Settings → Logs)
 - Keyboard shortcuts (Space, Arrow keys)
 
 ## Requirements
@@ -44,13 +52,6 @@ xattr -cr /Applications/Spotoast.app
 ```
 
 On first launch, paste your Client ID into the setup screen and click Save, then log in with your Spotify account.
-
-Alternatively, set the environment variable before running:
-
-```bash
-export SPOTIFY_CLIENT_ID="your-client-id-here"
-swift run Spotoast
-```
 
 ## License
 
