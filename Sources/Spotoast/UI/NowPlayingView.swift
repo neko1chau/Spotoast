@@ -71,10 +71,11 @@ struct TrackRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
-        )
+        .background {
+            if isHovered {
+                RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06))
+            }
+        }
         .contentShape(Rectangle())
         .onHover { onHover($0) }
         .onTapGesture(count: 2) {
@@ -604,7 +605,11 @@ struct AlbumView: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 6).fill(hoveredIndex == index ? Color.primary.opacity(0.06) : .clear))
+        .background {
+            if hoveredIndex == index {
+                RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06))
+            }
+        }
         .contentShape(Rectangle())
         .onHover { hoveredIndex = $0 ? index : nil }
         .onTapGesture(count: 2) { player.playTracks(allIds, startIndex: index) }
@@ -779,7 +784,8 @@ struct NowPlayingBar: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
         }
-        .glassMaterial()
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12))
+        .glassBar()
     }
 
     private var trackInfo: some View {
@@ -829,8 +835,8 @@ struct NowPlayingBar: View {
             .foregroundColor(.primary)
 
             Button(action: { player.togglePlay() }) {
-                Image(systemName: player.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                    .font(.system(size: 32))
+                Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 20))
             }
             .buttonStyle(.borderless)
             .foregroundColor(.primary)
@@ -968,7 +974,7 @@ struct FullPlayerView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.85))
                             .frame(width: 30, height: 30)
-                            .glassBackground(cornerRadius: 15, fallback: Color.white.opacity(0.15))
+                            .glassCircle(fallback: Color.white.opacity(0.15))
                     }
                     .buttonStyle(.borderless)
                     .padding(.leading, 14)
@@ -1006,7 +1012,7 @@ struct FullPlayerView: View {
     private func albumArt(size: CGFloat) -> some View {
         if let track = player.currentTrack {
             CachedAsyncImage(url: URL(string: track.imageUrl), contentMode: .fit) {
-                RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06))
                     .aspectRatio(1, contentMode: .fit)
             }
             .frame(width: size, height: size)
@@ -1071,17 +1077,28 @@ struct FullPlayerView: View {
     }
 
     private var playbackControls: some View {
-        HStack(spacing: 26) {
+        HStack(spacing: 20) {
             iBtn("shuffle", sz: 16, c: player.isShuffled ? .green : .white.opacity(0.4)) { player.toggleShuffle() }
-            iBtn("backward.fill", sz: 26, c: .white) { player.previousTrack() }
+            iBtn("backward.fill", sz: 22, c: .white) { player.previousTrack() }
             Button(action: { player.togglePlay() }) {
-                Image(systemName: player.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                    .font(.system(size: 52))
+                Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 32))
             }.buttonStyle(.borderless).foregroundColor(.white)
-            iBtn("forward.fill", sz: 26, c: .white) { player.nextTrack() }
+            iBtn("forward.fill", sz: 22, c: .white) { player.nextTrack() }
             iBtn(player.repeatMode == .track ? "repeat.1" : "repeat", sz: 16,
                  c: player.repeatMode != .off ? .green : .white.opacity(0.4)) { player.cycleRepeatMode() }
         }
+    }
+
+    private func glassBtn(_ n: String, sz: CGFloat, frame: CGFloat, c: Color, a: @escaping () -> Void) -> some View {
+        Button(action: a) {
+            Image(systemName: n)
+                .font(.system(size: sz))
+                .foregroundColor(c)
+                .frame(width: frame, height: frame)
+                .glassCircle(fallback: Color.white.opacity(0.08))
+        }
+        .buttonStyle(.borderless)
     }
 
     private func iBtn(_ n: String, sz: CGFloat, c: Color, a: @escaping () -> Void) -> some View {
@@ -1177,16 +1194,16 @@ struct FullPlayerView: View {
     private func fmt(_ t: TimeInterval) -> String { "\(Int(t) / 60):\(String(format: "%02d", Int(t) % 60))" }
 
     private func applyImmersiveTitleBar(_ immersive: Bool) {
-        DispatchQueue.main.async {
+        let apply = {
             guard let window = NSApplication.shared.windows.first(where: { $0.title == "Spotoast" }) ?? NSApplication.shared.windows.first else { return }
             window.titlebarAppearsTransparent = immersive
             window.titleVisibility = immersive ? .hidden : .visible
             window.titlebarSeparatorStyle = immersive ? .none : .automatic
-            if immersive {
-                window.styleMask.insert(.fullSizeContentView)
-            } else {
-                window.styleMask.remove(.fullSizeContentView)
-            }
+        }
+        if immersive {
+            DispatchQueue.main.async { apply() }
+        } else {
+            apply()
         }
     }
 }

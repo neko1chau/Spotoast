@@ -18,7 +18,7 @@ final class MiniPlayerController {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 48),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow],
+            styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -32,6 +32,8 @@ final class MiniPlayerController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        panel.minSize = NSSize(width: 200, height: 48)
+        panel.maxSize = NSSize(width: 800, height: 48)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         if let screen = NSScreen.main {
@@ -54,13 +56,13 @@ private struct MiniPlayerContent: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             CachedAsyncImage(url: URL(string: player.currentTrack?.imageUrl ?? "")) {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 5)
                     .fill(Color.white.opacity(0.08))
             }
-            .frame(width: 32, height: 32)
-            .cornerRadius(6)
+            .frame(width: 30, height: 30)
+            .cornerRadius(5)
 
             Text(currentLyric)
                 .font(.system(size: 14, weight: .medium))
@@ -84,8 +86,8 @@ private struct MiniPlayerContent: View {
                 .buttonStyle(.borderless)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(9)
+        .frame(maxWidth: .infinity)
         .frame(height: 48)
         .glassBackground(cornerRadius: 10, fallback: Color.black.opacity(0.75))
         .onHover { isHovered = $0 }

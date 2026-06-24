@@ -23,7 +23,6 @@ struct NavState {
     var searchQuery: String
     var selectedArtistId: String?
     var selectedAlbumId: String?
-    var showSettings: Bool
     var showQueue: Bool
 }
 
@@ -37,7 +36,6 @@ struct ContentView: View {
     @State private var alertMessage = ""
     @State private var showAlert = false
     @State private var showFullPlayer = false
-    @State private var showSettings = false
     @State private var searchQuery = ""
     @State private var selectedArtistId: String?
     @State private var selectedAlbumId: String?
@@ -47,6 +45,7 @@ struct ContentView: View {
     @State private var playlistsCollapsed = false
     @State private var settledTask: Task<Void, Never>?
     @AppStorage("playlistGridView") private var playlistGridView = false
+    @AppStorage("simpleMode") private var simpleMode = false
 
     var body: some View {
         Group {
@@ -96,13 +95,6 @@ struct ContentView: View {
                         if showQueue {
                             QueueView()
                                 .environmentObject(player)
-                        } else if showSettings {
-                            SettingsView {
-                                authManager.logout()
-                                player.cleanup()
-                                showSettings = false
-                            }
-                            .environmentObject(authManager)
                         } else if let artistId = selectedArtistId {
                             detailWithBack {
                                 popNav()
@@ -153,7 +145,6 @@ struct ContentView: View {
                             searchQuery = ""
                             selectedPlaylistId = nil
                             showingLikedSongs = false
-                            showSettings = false
                             showQueue = false
                             selectedAlbumId = nil
                             selectedArtistId = id
@@ -165,12 +156,12 @@ struct ContentView: View {
                             searchQuery = ""
                             selectedPlaylistId = nil
                             showingLikedSongs = false
-                            showSettings = false
                             showQueue = false
                             selectedArtistId = nil
                             selectedAlbumId = id
                         }
                     })
+
 
                     NowPlayingBar(showFullPlayer: $showFullPlayer, showQueue: $showQueue)
                         .environmentObject(player)
@@ -225,7 +216,6 @@ struct ContentView: View {
             searchQuery: searchQuery,
             selectedArtistId: selectedArtistId,
             selectedAlbumId: selectedAlbumId,
-            showSettings: showSettings,
             showQueue: showQueue
         ))
     }
@@ -241,7 +231,6 @@ struct ContentView: View {
         searchQuery = prev.searchQuery
         selectedArtistId = prev.selectedArtistId
         selectedAlbumId = prev.selectedAlbumId
-        showSettings = prev.showSettings
         showQueue = prev.showQueue
     }
 
@@ -280,27 +269,35 @@ struct ContentView: View {
     }
 
     private func nowPlayingCard(_ track: Track) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             CachedAsyncImage(url: URL(string: track.imageUrl), contentMode: .fit) {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(Color.primary.opacity(0.05))
                     .aspectRatio(1, contentMode: .fit)
             }
             .frame(width: 200, height: 200)
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+            .cornerRadius(10)
+            .padding(.top, 8)
+            .padding(.horizontal, 8)
 
             VStack(spacing: 4) {
                 Text(track.name)
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                 Text(track.artists)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
+            .padding(.top, 14)
+            .padding(.bottom, 14)
+            .padding(.horizontal, 16)
         }
+        .frame(width: 216)
+        .glassCard(cornerRadius: 14)
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
     }
@@ -313,7 +310,7 @@ struct ContentView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary.opacity(0.7))
                         .frame(width: 28, height: 28)
-                        .glassBackground(cornerRadius: 14, fallback: Color.primary.opacity(0.08))
+                        .glassCircle(fallback: Color.primary.opacity(0.08))
                 }
                 .buttonStyle(.borderless)
                 .padding(.leading, 12)
@@ -322,6 +319,15 @@ struct ContentView: View {
             }
             content()
         }
+    }
+
+    private func goHome() {
+        showingLikedSongs = false
+        selectedPlaylistId = nil
+        showQueue = false
+        searchQuery = ""
+        selectedArtistId = nil
+        selectedAlbumId = nil
     }
 
     private var sidebar: some View {
@@ -336,7 +342,6 @@ struct ContentView: View {
                     .onChange(of: searchQuery) { query in
                         selectedPlaylistId = nil
                         showingLikedSongs = false
-                        showSettings = false
                         selectedArtistId = nil
                         selectedAlbumId = nil
                         apiLoader.search(query: query)
@@ -359,123 +364,11 @@ struct ContentView: View {
             .padding(.top, 8)
             .padding(.bottom, 8)
 
-            List(selection: Binding<String?>(
-                get: { showingLikedSongs ? "__liked__" : selectedPlaylistId },
-                set: { newValue in
-                    showSettings = false
-                    showQueue = false
-                    searchQuery = ""
-                    selectedArtistId = nil
-                    selectedAlbumId = nil
-                    if newValue == "__liked__" {
-                        showingLikedSongs = true
-                        selectedPlaylistId = nil
-                    } else {
-                        showingLikedSongs = false
-                        selectedPlaylistId = newValue
-                    }
-                }
-            )) {
-                Section {
-                    sidebarHeader("Library")
-
-                    Label {
-                        Text("Liked Songs")
-                    } icon: {
-                        Image(systemName: "heart.fill")
-                            .foregroundColor(.pink)
-                    }
-                    .tag("__liked__")
-
-                    HStack(spacing: 4) {
-                        Text("Playlists")
-                        if playlistsCollapsed {
-                            Text("\(apiLoader.playlists.count)")
-                                .foregroundColor(.secondary.opacity(0.4))
-                        }
-                        Spacer()
-                        if !playlistsCollapsed {
-                            Button {
-                                withAnimation(.easeOut(duration: 0.2)) { playlistGridView.toggle() }
-                            } label: {
-                                Image(systemName: playlistGridView ? "list.bullet" : "square.grid.2x2")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .padding(.top, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.25)) { playlistsCollapsed.toggle() }
-                    }
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-
-                    if !playlistsCollapsed {
-                        if apiLoader.isLoadingPlaylists {
-                            Text("Loading...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.vertical, 4)
-                        }
-                        if playlistGridView {
-                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
-                                ForEach(apiLoader.playlists) { playlist in
-                                    VStack(spacing: 5) {
-                                        CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
-                                            Color.primary.opacity(0.08)
-                                        }
-                                        .aspectRatio(1, contentMode: .fill)
-                                        .frame(minWidth: 0, maxWidth: .infinity)
-                                        .clipped()
-                                        .cornerRadius(6)
-
-                                        Text(playlist.name)
-                                            .font(.system(size: 10))
-                                            .lineLimit(1)
-                                            .frame(maxWidth: .infinity)
-                                    }
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        showingLikedSongs = false
-                                        selectedPlaylistId = playlist.id
-                                    }
-                                }
-                            }
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        } else {
-                            ForEach(apiLoader.playlists) { playlist in
-                                HStack(spacing: 10) {
-                                    CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color.primary.opacity(0.08))
-                                    }
-                                    .frame(width: 32, height: 32)
-                                    .cornerRadius(4)
-
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(playlist.name)
-                                            .lineLimit(1)
-                                            .font(.system(size: 13))
-                                        Text("\(playlist.tracks?.total ?? 0) tracks")
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .tag(playlist.id)
-                            }
-                        }
-                    }
-                }
+            if simpleMode {
+                simpleSidebar
+            } else {
+                fullSidebar
             }
-            .listStyle(.sidebar)
-            .scrollIndicators(.never)
 
             Divider()
 
@@ -503,20 +396,192 @@ struct ContentView: View {
                     .foregroundColor(.orange)
                 }
 
-                Button {
-                    showSettings = true
-                    showingLikedSongs = false
-                    selectedPlaylistId = nil
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.secondary)
-            }
+}
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+    }
+
+    private var simpleSidebar: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if apiLoader.isLoadingSavedTracks && apiLoader.savedTracks.isEmpty {
+                    ContentPulse(symbol: "heart.fill", label: "Loading songs")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else {
+                    let tracks = apiLoader.savedTracks.compactMap { $0.track }
+                    let ids = tracks.map(\.id)
+                    ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                        let isPlaying = player.currentTrack?.id == track.id
+                        HStack(spacing: 10) {
+                            CachedAsyncImage(url: URL(string: track.album.images.first?.url ?? "")) {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.primary.opacity(0.08))
+                            }
+                            .frame(width: 32, height: 32)
+                            .cornerRadius(4)
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(track.name)
+                                    .font(.system(size: 13))
+                                    .lineLimit(1)
+                                    .foregroundColor(isPlaying ? .green : .primary)
+                                Text(track.artists.map(\.name).joined(separator: ", "))
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            if isPlaying && !player.isPaused {
+                                Image(systemName: "waveform")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            player.playTracks(ids, startIndex: index)
+                        }
+                        .onTapGesture(count: 1) {}
+                    }
+                }
+            }
+        }
+        .scrollIndicators(.never)
+    }
+
+    private var fullSidebar: some View {
+        List(selection: Binding<String?>(
+            get: {
+                if showingLikedSongs { return "__liked__" }
+                if selectedPlaylistId != nil { return selectedPlaylistId }
+                return "__home__"
+            },
+            set: { newValue in
+                showQueue = false
+                searchQuery = ""
+                selectedArtistId = nil
+                selectedAlbumId = nil
+                if newValue == "__home__" || newValue == nil {
+                    goHome()
+                } else if newValue == "__liked__" {
+                    showingLikedSongs = true
+                    selectedPlaylistId = nil
+                } else {
+                    showingLikedSongs = false
+                    selectedPlaylistId = newValue
+                }
+            }
+        )) {
+            Section {
+                Label {
+                    Text("Home")
+                } icon: {
+                    Image(systemName: "house")
+                        .foregroundColor(.secondary)
+                }
+                .tag("__home__")
+
+                Label {
+                    Text("Liked Songs")
+                } icon: {
+                    Image(systemName: "heart.fill")
+                        .foregroundColor(.pink)
+                }
+                .tag("__liked__")
+
+                HStack(spacing: 4) {
+                    Text("Playlists")
+                    if playlistsCollapsed {
+                        Text("\(apiLoader.playlists.count)")
+                            .foregroundColor(.secondary.opacity(0.4))
+                    }
+                    Spacer()
+                    if !playlistsCollapsed {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.2)) { playlistGridView.toggle() }
+                        } label: {
+                            Image(systemName: playlistGridView ? "list.bullet" : "square.grid.2x2")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.25)) { playlistsCollapsed.toggle() }
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+                if !playlistsCollapsed {
+                    if apiLoader.isLoadingPlaylists {
+                        Text("Loading...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
+                    }
+                    if playlistGridView {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
+                            ForEach(apiLoader.playlists) { playlist in
+                                VStack(spacing: 5) {
+                                    CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
+                                        Color.primary.opacity(0.08)
+                                    }
+                                    .aspectRatio(1, contentMode: .fill)
+                                    .frame(minWidth: 0, maxWidth: .infinity)
+                                    .clipped()
+                                    .cornerRadius(6)
+
+                                    Text(playlist.name)
+                                        .font(.system(size: 10))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    showingLikedSongs = false
+                                    selectedPlaylistId = playlist.id
+                                }
+                            }
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    } else {
+                        ForEach(apiLoader.playlists) { playlist in
+                            HStack(spacing: 10) {
+                                CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.primary.opacity(0.08))
+                                }
+                                .frame(width: 32, height: 32)
+                                .cornerRadius(4)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(playlist.name)
+                                        .lineLimit(1)
+                                        .font(.system(size: 13))
+                                    Text("\(playlist.tracks?.total ?? 0) tracks")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .tag(playlist.id)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollIndicators(.never)
     }
 
     private func sidebarHeader(_ title: String, count: Int? = nil, action: (() -> Void)? = nil) -> some View {
