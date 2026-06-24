@@ -328,6 +328,11 @@ actor APIClient {
             logger.error("API 401 \(path): \(body.prefix(200))")
             throw APIError.unauthorized(body: body)
         }
+        if status == 403 {
+            let body = String(data: data, encoding: .utf8) ?? "empty"
+            logger.error("API 403 \(path): \(body.prefix(200))")
+            throw APIError.httpError(statusCode: 403, body: "Permission denied — try logging out and back in from Settings")
+        }
         guard (200...299).contains(status) else {
             let body = String(data: data, encoding: .utf8) ?? "empty"
             logger.error("API \(status) \(path): \(body.prefix(200))")
@@ -343,8 +348,24 @@ actor APIClient {
     }
 
     func search(query: String, types: String = "track,artist,album", limit: Int = 20) async throws -> SearchResult {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        return try await get("/search?q=\(encoded)&type=\(types)&limit=\(limit)")
+        var components = URLComponents(string: "\(baseURL)/search")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "type", value: types),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        guard let url = components.url else { throw APIError.invalidURL("/search") }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        var (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (data, response) = try await session.data(for: request)
+            }
+        }
+        try checkResponse(data, response, path: "/search")
+        return try JSONDecoder().decode(SearchResult.self, from: data)
     }
 
     func getArtistTopTracks(_ artistId: String) async throws -> [TrackItem] {

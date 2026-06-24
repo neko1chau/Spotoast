@@ -30,8 +30,7 @@ struct SettingsView: View {
                     Divider().padding(.horizontal, 16)
                     card(isBottom: true) { accountContent }
                 }
-                .background(Color.gray.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .glassCard(cornerRadius: 10)
 
                 Spacer().frame(height: 20)
             }
@@ -59,7 +58,6 @@ struct SettingsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.gray.opacity(0.06))
     }
 
     // MARK: - About

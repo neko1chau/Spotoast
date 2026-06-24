@@ -313,8 +313,7 @@ struct ContentView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary.opacity(0.7))
                         .frame(width: 28, height: 28)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(Circle())
+                        .glassBackground(cornerRadius: 14, fallback: Color.primary.opacity(0.08))
                 }
                 .buttonStyle(.borderless)
                 .padding(.leading, 12)
@@ -355,8 +354,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(8)
+            .glassBackground(cornerRadius: 8, fallback: Color.gray.opacity(0.1))
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 8)

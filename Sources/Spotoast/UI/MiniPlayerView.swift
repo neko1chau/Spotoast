@@ -87,9 +87,7 @@ private struct MiniPlayerContent: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(height: 48)
-        .background(Color.black.opacity(0.75))
-        .background(.ultraThinMaterial.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassBackground(cornerRadius: 10, fallback: Color.black.opacity(0.75))
         .onHover { isHovered = $0 }
         .onChange(of: player.position) { _ in updateLyric() }
         .onChange(of: player.lyrics.count) { _ in

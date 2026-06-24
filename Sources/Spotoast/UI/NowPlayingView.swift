@@ -779,7 +779,7 @@ struct NowPlayingBar: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
         }
-        .background(.ultraThinMaterial)
+        .glassMaterial()
     }
 
     private var trackInfo: some View {
@@ -968,8 +968,7 @@ struct FullPlayerView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white.opacity(0.85))
                             .frame(width: 30, height: 30)
-                            .background(Color.white.opacity(0.15))
-                            .clipShape(Circle())
+                            .glassBackground(cornerRadius: 15, fallback: Color.white.opacity(0.15))
                     }
                     .buttonStyle(.borderless)
                     .padding(.leading, 14)
