@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var editingClientId = false
     @State private var clientIdInput = ""
     @State private var cacheSize: String?
+    @State private var showClearConfirm = false
 
     var body: some View {
         ScrollView {
@@ -137,15 +138,19 @@ struct SettingsView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary)
                 Spacer()
-                Button("Clear") {
-                    Task {
-                        await LyricsCache.disk.clear()
-                        await ImageCache.disk.clear()
-                        await updateCacheSize()
+                Button("Clear") { showClearConfirm = true }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .alert("Clear all cached data?", isPresented: $showClearConfirm) {
+                        Button("Clear", role: .destructive) {
+                            Task {
+                                await LyricsCache.disk.clear()
+                                await ImageCache.disk.clear()
+                                await updateCacheSize()
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
                     }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
             .padding(.top, 2)
         }

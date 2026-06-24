@@ -31,7 +31,14 @@ class AuthManager: NSObject, ObservableObject {
     var hasClientId: Bool { !clientId.isEmpty }
 
     func saveClientId(_ id: String) {
-        clientId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if newId != clientId {
+            clearTokens()
+            accessToken = nil
+            refreshToken = nil
+            isAuthenticated = false
+        }
+        clientId = newId
         KeychainHelper.save(key: "client_id", value: clientId)
     }
     private let redirectUri = "spotoast://callback"
@@ -116,6 +123,9 @@ class AuthManager: NSObject, ObservableObject {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let errJson = try? JSONDecoder().decode(OAuthErrorResponse.self, from: data), errJson.error != nil {
                 self.error = errJson.errorDescription ?? errJson.error ?? "Token refresh failed"
+                if errJson.error == "invalid_grant" {
+                    logout()
+                }
                 return false
             }
             let json = try JSONDecoder().decode(TokenResponse.self, from: data)

@@ -45,6 +45,8 @@ struct ContentView: View {
     @State private var navStack: [NavState] = []
     @State private var playerSettled = false
     @State private var playlistsCollapsed = false
+    @State private var settledTask: Task<Void, Never>?
+    @AppStorage("playlistGridView") private var playlistGridView = false
 
     var body: some View {
         Group {
@@ -260,9 +262,11 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.35), value: playerSettled)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: player.isReady) { ready in
+            settledTask?.cancel()
             if ready {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    if player.currentTrack == nil {
+                settledTask = Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    if !Task.isCancelled && player.currentTrack == nil {
                         withAnimation(.easeOut(duration: 0.3)) { playerSettled = true }
                     }
                 }
@@ -383,9 +387,34 @@ struct ContentView: View {
                     }
                     .tag("__liked__")
 
-                    sidebarHeader("Playlists", count: playlistsCollapsed ? apiLoader.playlists.count : nil) {
+                    HStack(spacing: 4) {
+                        Text("Playlists")
+                        if playlistsCollapsed {
+                            Text("\(apiLoader.playlists.count)")
+                                .foregroundColor(.secondary.opacity(0.4))
+                        }
+                        Spacer()
+                        if !playlistsCollapsed {
+                            Button {
+                                withAnimation(.easeOut(duration: 0.2)) { playlistGridView.toggle() }
+                            } label: {
+                                Image(systemName: playlistGridView ? "list.bullet" : "square.grid.2x2")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         withAnimation(.easeOut(duration: 0.25)) { playlistsCollapsed.toggle() }
                     }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
 
                     if !playlistsCollapsed {
                         if apiLoader.isLoadingPlaylists {
@@ -394,25 +423,53 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                                 .padding(.vertical, 4)
                         }
-                        ForEach(apiLoader.playlists) { playlist in
-                            HStack(spacing: 10) {
-                                CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.primary.opacity(0.08))
-                                }
-                                .frame(width: 32, height: 32)
-                                .cornerRadius(4)
+                        if playlistGridView {
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
+                                ForEach(apiLoader.playlists) { playlist in
+                                    VStack(spacing: 5) {
+                                        CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
+                                            Color.primary.opacity(0.08)
+                                        }
+                                        .aspectRatio(1, contentMode: .fill)
+                                        .frame(minWidth: 0, maxWidth: .infinity)
+                                        .clipped()
+                                        .cornerRadius(6)
 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(playlist.name)
-                                        .lineLimit(1)
-                                        .font(.system(size: 13))
-                                    Text("\(playlist.tracks?.total ?? 0) tracks")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
+                                        Text(playlist.name)
+                                            .font(.system(size: 10))
+                                            .lineLimit(1)
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        showingLikedSongs = false
+                                        selectedPlaylistId = playlist.id
+                                    }
                                 }
                             }
-                            .tag(playlist.id)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        } else {
+                            ForEach(apiLoader.playlists) { playlist in
+                                HStack(spacing: 10) {
+                                    CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.primary.opacity(0.08))
+                                    }
+                                    .frame(width: 32, height: 32)
+                                    .cornerRadius(4)
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(playlist.name)
+                                            .lineLimit(1)
+                                            .font(.system(size: 13))
+                                        Text("\(playlist.tracks?.total ?? 0) tracks")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .tag(playlist.id)
+                            }
                         }
                     }
                 }
@@ -482,6 +539,7 @@ struct ContentView: View {
 
     private func setupPlayer(token: String) {
         player.setup(with: token)
+        MediaKeyManager.shared.start(player: player)
     }
 }
 
@@ -550,19 +608,22 @@ class APILoader: ObservableObject {
         isLoadingPlaylists = true
         do {
             let result = try await loadPlaylistsWithRetry(api: api)
+            await PlaylistCache.savePlaylists(result)
             withAnimation(.easeOut(duration: 0.3)) {
                 playlists = result
                 isLoadingPlaylists = false
             }
         } catch {
-            let detail: String
-            if let decodingError = error as? DecodingError {
-                detail = String(describing: decodingError)
+            if let cached = await PlaylistCache.loadPlaylists(), !cached.isEmpty {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    playlists = cached
+                    isLoadingPlaylists = false
+                }
             } else {
-                detail = error.localizedDescription
+                let detail = (error as? DecodingError).map { String(describing: $0) } ?? error.localizedDescription
+                self.error = "Failed to load playlists: \(detail)"
+                withAnimation { isLoadingPlaylists = false }
             }
-            self.error = "Failed to load playlists: \(detail)"
-            withAnimation { isLoadingPlaylists = false }
         }
     }
 
@@ -584,17 +645,23 @@ class APILoader: ObservableObject {
             guard let api = self?.api else { return }
             do {
                 let tracks = try await api.getPlaylistTracks(playlistId)
+                await PlaylistCache.savePlaylistTracks(tracks, for: playlistId)
                 self?.setTracks(tracks, for: playlistId)
             } catch APIError.unauthorized {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if let tracks = try? await api.getPlaylistTracks(playlistId) {
+                    await PlaylistCache.savePlaylistTracks(tracks, for: playlistId)
                     self?.setTracks(tracks, for: playlistId)
                 } else if !Task.isCancelled {
                     self?.error = "Failed to load tracks: retry failed"
                 }
             } catch {
                 if !Task.isCancelled {
-                    self?.error = "Failed to load tracks: \(error.localizedDescription)"
+                    if let cached = await PlaylistCache.loadPlaylistTracks(for: playlistId) {
+                        self?.setTracks(cached, for: playlistId)
+                    } else {
+                        self?.error = "Failed to load tracks: \(error.localizedDescription)"
+                    }
                 }
             }
         }
@@ -614,13 +681,21 @@ class APILoader: ObservableObject {
         isLoadingSavedTracks = true
         do {
             let result = try await api.getSavedTracks()
+            await PlaylistCache.saveSavedTracks(result)
             withAnimation(.easeOut(duration: 0.3)) {
                 savedTracks = result
                 isLoadingSavedTracks = false
             }
         } catch {
-            self.error = "Failed to load Liked Songs: \(error.localizedDescription)"
-            withAnimation { isLoadingSavedTracks = false }
+            if let cached = await PlaylistCache.loadSavedTracks(), !cached.isEmpty {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    savedTracks = cached
+                    isLoadingSavedTracks = false
+                }
+            } else {
+                self.error = "Failed to load Liked Songs: \(error.localizedDescription)"
+                withAnimation { isLoadingSavedTracks = false }
+            }
         }
     }
 

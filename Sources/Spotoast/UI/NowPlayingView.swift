@@ -609,6 +609,25 @@ struct AlbumView: View {
         .onHover { hoveredIndex = $0 ? index : nil }
         .onTapGesture(count: 2) { player.playTracks(allIds, startIndex: index) }
         .onTapGesture(count: 1) {}
+        .contextMenu {
+            Button {
+                player.playTracks(allIds, startIndex: index)
+            } label: {
+                Label("Play", systemImage: "play.fill")
+            }
+            Button {
+                player.addToQueue(trackId: track.id)
+            } label: {
+                Label("Add to Queue", systemImage: "text.badge.plus")
+            }
+            Divider()
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("https://open.spotify.com/track/\(track.id)", forType: .string)
+            } label: {
+                Label("Copy Song Link", systemImage: "link")
+            }
+        }
     }
 
     private func timeString(from ms: Int) -> String {
@@ -893,6 +912,7 @@ struct FullPlayerView: View {
     @Binding var isPresented: Bool
     @State private var isDragging = false
     @State private var dragProgress: Double = 0
+    @State private var scrolledLineId: TimeInterval?
 
     var body: some View {
         ZStack {
@@ -921,10 +941,15 @@ struct FullPlayerView: View {
                         playbackControls
                     }
                     .position(x: leftW / 2, y: h / 2)
+                    .animation(nil, value: player.isLoadingLyrics)
+                    .animation(nil, value: player.lyrics.count)
 
                     lyricsSide(h: h)
                         .frame(width: w - leftW, height: h)
                         .position(x: leftW + (w - leftW) / 2, y: h / 2)
+                        .animation(nil, value: player.isLoadingLyrics)
+                        .animation(nil, value: player.lyrics.count)
+                        .animation(nil, value: player.isSyncedLyrics)
                 }
             }
             .ignoresSafeArea()
@@ -962,9 +987,10 @@ struct FullPlayerView: View {
             applyImmersiveTitleBar(false)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            if isPresented {
-                applyImmersiveTitleBar(true)
-            }
+            if isPresented { applyImmersiveTitleBar(true) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            if isPresented { applyImmersiveTitleBar(true) }
         }
     }
 
@@ -1076,9 +1102,23 @@ struct FullPlayerView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                lyricsScroll(fadeH: fadeH)
+                VStack(spacing: 0) {
+                    if !player.isSyncedLyrics {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.badge.xmark")
+                                .font(.system(size: 11))
+                            Text("No timeline available")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white.opacity(0.3))
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                    }
+                    lyricsScroll(fadeH: fadeH)
+                }
             }
         }
+        .transaction { $0.animation = nil }
     }
 
     private func lyricsScroll(fadeH: CGFloat) -> some View {
@@ -1087,7 +1127,7 @@ struct FullPlayerView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Spacer().frame(height: fadeH + 40)
                     ForEach(player.lyrics) { line in
-                        let active = player.isSyncedLyrics && line.id == player.currentLyricLineId
+                        let active = player.isSyncedLyrics && line.id == scrolledLineId
                         Text(line.words)
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.white.opacity(active ? 1.0 : 0.18))
@@ -1095,7 +1135,6 @@ struct FullPlayerView: View {
                             .padding(.horizontal, 32)
                             .padding(.vertical, 4)
                             .id(line.id)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: active)
                     }
                     Spacer().frame(height: fadeH + 80)
                 }
@@ -1109,12 +1148,20 @@ struct FullPlayerView: View {
                         .frame(height: fadeH)
                 }
             )
-            .onChange(of: player.currentLyricLineId) { id in
-                if let id {
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
-                        proxy.scrollTo(id, anchor: .center)
-                    }
+            .onChange(of: player.position) { _ in
+                guard player.isSyncedLyrics else { return }
+                var best: LyricLine?
+                for line in player.lyrics {
+                    if line.startTime <= player.position { best = line } else { break }
                 }
+                guard let id = best?.id, id != scrolledLineId else { return }
+                scrolledLineId = id
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
+            .onChange(of: player.lyrics.count) { _ in
+                scrolledLineId = nil
             }
         }
     }
@@ -1124,16 +1171,15 @@ struct FullPlayerView: View {
     private func fmt(_ t: TimeInterval) -> String { "\(Int(t) / 60):\(String(format: "%02d", Int(t) % 60))" }
 
     private func applyImmersiveTitleBar(_ immersive: Bool) {
-        for delay in stride(from: 0.0, through: 0.3, by: 0.05) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
-                window.titlebarAppearsTransparent = immersive
-                window.titleVisibility = immersive ? .hidden : .visible
-                window.titlebarSeparatorStyle = immersive ? .none : .automatic
-                if immersive {
-                    window.styleMask.insert(.fullSizeContentView)
-                    window.collectionBehavior.insert(.fullScreenPrimary)
-                }
+        DispatchQueue.main.async {
+            guard let window = NSApplication.shared.windows.first(where: { $0.title == "Spotoast" }) ?? NSApplication.shared.windows.first else { return }
+            window.titlebarAppearsTransparent = immersive
+            window.titleVisibility = immersive ? .hidden : .visible
+            window.titlebarSeparatorStyle = immersive ? .none : .automatic
+            if immersive {
+                window.styleMask.insert(.fullSizeContentView)
+            } else {
+                window.styleMask.remove(.fullSizeContentView)
             }
         }
     }
@@ -1168,36 +1214,29 @@ struct QueueView: View {
                     .padding(.top, 8)
                 Spacer()
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if let current = player.currentTrack {
-                            Text("Now Playing")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal)
-                                .padding(.top, 12)
-                                .padding(.bottom, 4)
-
+                List {
+                    if let current = player.currentTrack {
+                        Section {
                             queueRow(current, isPlaying: true)
+                        } header: {
+                            Text("Now Playing")
                         }
+                    }
 
-                        if !player.nextTracks.isEmpty {
-                            Text("Next Up")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal)
-                                .padding(.top, 16)
-                                .padding(.bottom, 4)
-
+                    if !player.nextTracks.isEmpty {
+                        Section {
                             ForEach(Array(player.nextTracks.enumerated()), id: \.offset) { _, track in
                                 queueRow(track, isPlaying: false)
                             }
+                            .onMove { from, to in
+                                player.reorderQueue(from: from, to: to)
+                            }
+                        } header: {
+                            Text("Next Up")
                         }
                     }
-                    .padding(.bottom, 16)
                 }
+                .listStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1235,17 +1274,20 @@ struct QueueView: View {
 }
 
 private struct LyricsPulse: View {
-    @State private var pulse = false
+    @State private var opacity: Double = 0.1
 
     var body: some View {
         VStack {
             Spacer()
             Text("♪")
                 .font(.system(size: 32))
-                .foregroundColor(.white.opacity(pulse ? 0.35 : 0.1))
-                .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulse)
-                .onAppear { pulse = true }
+                .foregroundColor(.white.opacity(opacity))
             Spacer()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                opacity = 0.35
+            }
         }
     }
 }

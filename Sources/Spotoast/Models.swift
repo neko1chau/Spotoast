@@ -49,10 +49,10 @@ struct TrackItem: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
-        self.name = try container.decode(String.self, forKey: .name)
-        self.artists = try container.decode([Artist].self, forKey: .artists)
-        self.album = try container.decode(Album.self, forKey: .album)
-        self.durationMs = try container.decode(Int.self, forKey: .durationMs)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        self.artists = try container.decodeIfPresent([Artist].self, forKey: .artists) ?? []
+        self.album = try container.decodeIfPresent(Album.self, forKey: .album) ?? Album(id: nil, images: [])
+        self.durationMs = try container.decodeIfPresent(Int.self, forKey: .durationMs) ?? 0
     }
 }
 
@@ -157,6 +157,13 @@ struct ArtistAlbumsResponse: Codable {
 struct LrcLibResponse: Codable {
     let syncedLyrics: String?
     let plainLyrics: String?
+}
+
+struct LrcLibSearchResult: Codable {
+    let syncedLyrics: String?
+    let plainLyrics: String?
+    let duration: Double?
+    let artistName: String?
 }
 
 struct LyricLine: Identifiable {

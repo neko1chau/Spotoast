@@ -1,7 +1,12 @@
 import Foundation
 
 actor APIClient {
-    private let session = URLSession.shared
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        return URLSession(configuration: config)
+    }()
     private let baseURL = "https://api.spotify.com/v1"
     private var accessToken: String
     var onUnauthorized: (() async -> Bool)?
@@ -82,14 +87,22 @@ actor APIClient {
     func transferPlayback(deviceId: String, play: Bool = false) async throws {
         let body = ["device_ids": [deviceId], "play": play] as [String: Any]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
-        guard let url = URL(string: "\(baseURL)/me/player") else { throw APIError.invalidURL("/me/player") }
+        let path = "/me/player"
+        guard let url = URL(string: "\(baseURL)\(path)") else { throw APIError.invalidURL(path) }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = bodyData
         let (resData, response) = try await session.data(for: request)
-        try checkResponse(resData, response, path: "/me/player")
+        if let http = response as? HTTPURLResponse, http.statusCode == 401,
+           let handler = onUnauthorized, await handler() {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: request)
+            try checkResponse(retryData, retryResponse, path: path)
+            return
+        }
+        try checkResponse(resData, response, path: path)
     }
 
     func startPlayback(contextUri: String? = nil, uris: [String]? = nil, offset: Int? = nil, deviceId: String? = nil) async throws {
@@ -97,7 +110,7 @@ actor APIClient {
         if let contextUri { body["context_uri"] = contextUri }
         if let uris { body["uris"] = uris }
         if let offset { body["offset"] = ["position": offset] }
-        let data = try JSONSerialization.data(withJSONObject: body)
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
         var urlString = "\(baseURL)/me/player/play"
         if let deviceId { urlString += "?device_id=\(deviceId)" }
         guard let url = URL(string: urlString) else { throw APIError.invalidURL(urlString) }
@@ -105,8 +118,15 @@ actor APIClient {
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = data
+        request.httpBody = bodyData
         let (resData, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401,
+           let handler = onUnauthorized, await handler() {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: request)
+            try checkResponse(retryData, retryResponse, path: "/me/player/play")
+            return
+        }
         try checkResponse(resData, response, path: "/me/player/play")
     }
 
@@ -154,23 +174,146 @@ actor APIClient {
         try await put(path)
     }
 
-    func getLyrics(trackName: String, artistName: String, durationSec: Int) async throws -> LrcLibResponse? {
+    func getLyrics(trackName: String, artistName: String, durationSec: Int) async -> LrcLibResponse? {
         let artist = artistName.components(separatedBy: ", ").first ?? artistName
-        var components = URLComponents(string: "https://lrclib.net/api/get")!
+        let variants = Array(Set([trackName, toTraditional(trackName), toSimplified(trackName)]))
+
+        let result: LrcLibResponse? = await withTaskGroup(of: LrcLibResponse?.self) { group in
+            for name in variants {
+                group.addTask { await self.fetchLrcLib(path: "/api/get", params: [
+                    "track_name": name, "artist_name": artist, "duration": "\(durationSec)"
+                ])}
+                group.addTask { await self.searchLrcLibBest(trackName: name, artistName: artist) }
+                group.addTask { await self.fetchNetEaseLyrics(trackName: name, artistName: artist) }
+            }
+
+            var bestPlain: LrcLibResponse?
+            for await resp in group {
+                guard let resp else { continue }
+                if resp.syncedLyrics != nil && !(resp.syncedLyrics?.isEmpty ?? true) {
+                    group.cancelAll()
+                    return resp
+                }
+                if bestPlain == nil { bestPlain = resp }
+            }
+            return bestPlain
+        }
+        return result
+    }
+
+    private func searchLrcLibBest(trackName: String, artistName: String) async -> LrcLibResponse? {
+        guard let results = await searchLrcLib(trackName: trackName, artistName: artistName) else { return nil }
+        let matched = results.filter {
+            ($0.artistName ?? "").localizedCaseInsensitiveContains(artistName) ||
+            artistName.localizedCaseInsensitiveContains($0.artistName ?? "")
+        }
+        if let synced = matched.first(where: { $0.syncedLyrics != nil && !$0.syncedLyrics!.isEmpty }) {
+            return LrcLibResponse(syncedLyrics: synced.syncedLyrics, plainLyrics: synced.plainLyrics)
+        }
+        if let plain = matched.first(where: { $0.plainLyrics != nil }) {
+            return LrcLibResponse(syncedLyrics: nil, plainLyrics: plain.plainLyrics)
+        }
+        return nil
+    }
+
+    private func toTraditional(_ text: String) -> String {
+        let mutable = NSMutableString(string: text)
+        CFStringTransform(mutable, nil, "Hans-Hant" as CFString, false)
+        return mutable as String
+    }
+
+    private func toSimplified(_ text: String) -> String {
+        let mutable = NSMutableString(string: text)
+        CFStringTransform(mutable, nil, "Hans-Hant" as CFString, true)
+        return mutable as String
+    }
+
+    private func fetchLrcLib(path: String, params: [String: String]) async -> LrcLibResponse? {
+        var components = URLComponents(string: "https://lrclib.net\(path)")!
+        components.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Spotoast/1.0", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+        return try? JSONDecoder().decode(LrcLibResponse.self, from: data)
+    }
+
+    private func searchLrcLib(trackName: String, artistName: String) async -> [LrcLibSearchResult]? {
+        var components = URLComponents(string: "https://lrclib.net/api/search")!
         components.queryItems = [
             URLQueryItem(name: "track_name", value: trackName),
-            URLQueryItem(name: "artist_name", value: artist),
-            URLQueryItem(name: "duration", value: "\(durationSec)")
+            URLQueryItem(name: "artist_name", value: artistName)
         ]
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
         request.setValue("Spotoast/1.0", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            return nil
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+        return try? JSONDecoder().decode([LrcLibSearchResult].self, from: data)
+    }
+
+    // MARK: - NetEase Lyrics Fallback
+
+    private static let lyricsSession = URLSession(configuration: .ephemeral)
+
+    private func fetchNetEaseLyrics(trackName: String, artistName: String) async -> LrcLibResponse? {
+        var searchComponents = URLComponents(string: "https://music.163.com/api/search/get")!
+        searchComponents.queryItems = [
+            URLQueryItem(name: "s", value: "\(trackName) \(artistName)"),
+            URLQueryItem(name: "type", value: "1"),
+            URLQueryItem(name: "limit", value: "5")
+        ]
+        guard let searchURL = searchComponents.url else { return nil }
+        var searchReq = URLRequest(url: searchURL)
+        searchReq.setValue("https://music.163.com", forHTTPHeaderField: "Referer")
+        guard let (searchData, searchResp) = try? await Self.lyricsSession.data(for: searchReq),
+              let searchHttp = searchResp as? HTTPURLResponse,
+              (200...299).contains(searchHttp.statusCode) else { return nil }
+
+        struct NetEaseSearch: Codable {
+            struct Result: Codable {
+                struct Song: Codable {
+                    let id: Int
+                    let name: String
+                    struct Artist: Codable { let name: String }
+                    let artists: [Artist]
+                }
+                let songs: [Song]?
+            }
+            let result: Result?
         }
-        return try? JSONDecoder().decode(LrcLibResponse.self, from: data)
+
+        guard let search = try? JSONDecoder().decode(NetEaseSearch.self, from: searchData),
+              let songs = search.result?.songs else { return nil }
+        guard let matched = songs.first(where: {
+            $0.artists.contains(where: { a in
+                a.name.localizedCaseInsensitiveContains(artistName) ||
+                artistName.localizedCaseInsensitiveContains(a.name)
+            })
+        }) else { return nil }
+        let songId = matched.id
+
+        guard let lyricURL = URL(string: "https://music.163.com/api/song/lyric?id=\(songId)&lv=1") else { return nil }
+        var lyricReq = URLRequest(url: lyricURL)
+        lyricReq.setValue("https://music.163.com", forHTTPHeaderField: "Referer")
+        guard let (lyricData, lyricResp) = try? await Self.lyricsSession.data(for: lyricReq),
+              let lyricHttp = lyricResp as? HTTPURLResponse,
+              (200...299).contains(lyricHttp.statusCode) else { return nil }
+
+        struct NetEaseLyric: Codable {
+            struct Lrc: Codable { let lyric: String? }
+            let lrc: Lrc?
+        }
+
+        guard let parsed = try? JSONDecoder().decode(NetEaseLyric.self, from: lyricData),
+              let lrc = parsed.lrc?.lyric, !lrc.isEmpty else { return nil }
+
+        let hasTiming = lrc.hasPrefix("[") && lrc.contains("]")
+        return LrcLibResponse(
+            syncedLyrics: hasTiming ? lrc : nil,
+            plainLyrics: hasTiming ? nil : lrc
+        )
     }
 
     // MARK: - Generic helpers

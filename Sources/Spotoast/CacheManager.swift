@@ -52,11 +52,51 @@ enum LyricsCache {
     }
 }
 
+// MARK: - Playlist Cache
+
+enum PlaylistCache {
+    static let disk = DiskCache(name: "playlists")
+
+    static func savePlaylists(_ playlists: [Playlist]) async {
+        guard let data = try? JSONEncoder().encode(playlists) else { return }
+        await disk.write(data, key: "playlists.json")
+    }
+
+    static func loadPlaylists() async -> [Playlist]? {
+        guard let data = await disk.read("playlists.json") else { return nil }
+        return try? JSONDecoder().decode([Playlist].self, from: data)
+    }
+
+    static func saveSavedTracks(_ tracks: [SavedTrack]) async {
+        guard let data = try? JSONEncoder().encode(tracks) else { return }
+        await disk.write(data, key: "saved_tracks.json")
+    }
+
+    static func loadSavedTracks() async -> [SavedTrack]? {
+        guard let data = await disk.read("saved_tracks.json") else { return nil }
+        return try? JSONDecoder().decode([SavedTrack].self, from: data)
+    }
+
+    static func savePlaylistTracks(_ tracks: [PlaylistTrack], for id: String) async {
+        guard let data = try? JSONEncoder().encode(tracks) else { return }
+        await disk.write(data, key: "tracks_\(id).json")
+    }
+
+    static func loadPlaylistTracks(for id: String) async -> [PlaylistTrack]? {
+        guard let data = await disk.read("tracks_\(id).json") else { return nil }
+        return try? JSONDecoder().decode([PlaylistTrack].self, from: data)
+    }
+}
+
 // MARK: - Image Cache
 
 enum ImageCache {
     static let disk = DiskCache(name: "images")
-    private static let memory = NSCache<NSString, NSImage>()
+    private static let memory: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 200
+        return cache
+    }()
 
     static func loadFromMemory(urlString: String) -> NSImage? {
         memory.object(forKey: safeKey(urlString) as NSString)

@@ -19,6 +19,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     @Published var previousTracks: [Track] = []
     @Published var currentLyricLineId: TimeInterval?
     private var lyricsTrackId: String?
+    private var lyricsTask: Task<Void, Never>?
 
     var deviceId: String?
     /// Set this to route playback commands through APIClient instead of JS.
@@ -38,6 +39,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     private var processCrashed = false
     private var didTransferPlayback = false
     private var lastToken: String?
+    private var playbackTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -101,6 +103,7 @@ class WebPlayerManager: NSObject, ObservableObject {
             didLoadPage = false
             processCrashed = false
             isReady = false
+            didTransferPlayback = false
             sdkStatus = "Reconnecting..."
             recreateWebView()
         }
@@ -114,14 +117,18 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func updateToken(_ token: String) {
-        let escaped = token.replacingOccurrences(of: "'", with: "\\'")
-        evaluate("updateToken('\(escaped)')")
+        lastToken = token
+        if let data = try? JSONSerialization.data(withJSONObject: token),
+           let json = String(data: data, encoding: .utf8) {
+            evaluate("updateToken(\(json))")
+        }
     }
 
     // MARK: - Playback Control (via APIClient)
 
     private func isDeviceNotFound(_ error: Error) -> Bool {
-        error.localizedDescription.contains("404")
+        let desc = error.localizedDescription
+        return desc.contains("404") && desc.contains("Device not found")
     }
 
     private func handleDeviceNotFound() {
@@ -256,6 +263,22 @@ class WebPlayerManager: NSObject, ObservableObject {
         }
     }
 
+    func reorderQueue(from source: IndexSet, to destination: Int) {
+        nextTracks.move(fromOffsets: source, toOffset: destination)
+        guard let api, let current = currentTrack else { return }
+        let uris = [current] .map { "spotify:track:\($0.id)" } + nextTracks.map { "spotify:track:\($0.id)" }
+        let savedPosition = position
+        Task { @MainActor in
+            do {
+                let did = try await resolveDevice(api: api)
+                try await api.startPlayback(uris: uris, offset: 0, deviceId: did)
+                try await api.seekTo(positionMs: Int(savedPosition * 1000))
+            } catch {
+                if isDeviceNotFound(error) { handleDeviceNotFound() }
+            }
+        }
+    }
+
     func addToQueue(trackId: String) {
         guard let api else { return }
         Task { @MainActor in
@@ -269,10 +292,11 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func playTracks(_ trackIds: [String], startIndex: Int = 0) {
+        playbackTask?.cancel()
         guard !trackIds.isEmpty else { return }
         if let api {
             let uris = trackIds.map { "spotify:track:\($0)" }
-            Task { @MainActor in
+            playbackTask = Task { @MainActor in
                 do {
                     let did = try await resolveDevice(api: api)
                     try await api.transferPlayback(deviceId: did, play: false)
@@ -289,8 +313,9 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func playPlaylist(_ playlistId: String, offset: Int = 0) {
+        playbackTask?.cancel()
         if let api {
-            Task { @MainActor in
+            playbackTask = Task { @MainActor in
                 do {
                     let did = try await resolveDevice(api: api)
                     try await api.transferPlayback(deviceId: did, play: false)
@@ -300,7 +325,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                         deviceId: did
                     )
                 } catch {
-                    self.error = "Play failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Play failed: \(error.localizedDescription)" }
                 }
             }
         } else {
@@ -333,18 +359,24 @@ class WebPlayerManager: NSObject, ObservableObject {
     func loadLyricsIfNeeded() {
         guard let track = currentTrack, let api, track.id != lyricsTrackId else { return }
         guard duration > 0 else { return }
+        lyricsTask?.cancel()
         lyricsTrackId = track.id
         lyrics = []
+        isSyncedLyrics = false
+        currentLyricLineId = nil
         isLoadingLyrics = true
         let trackId = track.id, name = track.name, artist = track.artists, dur = Int(duration)
         let cacheEnabled = UserDefaults.standard.bool(forKey: "cacheLyrics")
-        Task { @MainActor in
-            if cacheEnabled, let cached = await LyricsCache.load(trackId: trackId) {
+        lyricsTask = Task { @MainActor in
+            if cacheEnabled, let cached = await LyricsCache.load(trackId: trackId),
+               cached.syncedLyrics != nil && !(cached.syncedLyrics?.isEmpty ?? true) {
+                guard !Task.isCancelled, lyricsTrackId == trackId else { return }
                 applyLyrics(cached)
                 isLoadingLyrics = false
                 return
             }
-            let resp = try? await api.getLyrics(trackName: name, artistName: artist, durationSec: dur)
+            let resp = await api.getLyrics(trackName: name, artistName: artist, durationSec: dur)
+            guard !Task.isCancelled, lyricsTrackId == trackId else { return }
             isLoadingLyrics = false
             if let resp {
                 if cacheEnabled { await LyricsCache.save(resp, trackId: trackId) }
@@ -362,6 +394,9 @@ class WebPlayerManager: NSObject, ObservableObject {
                 .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                 .enumerated()
                 .map { LyricLine(startTime: Double($0.offset), words: $0.element) }
+            isSyncedLyrics = false
+        } else {
+            lyrics = []
             isSyncedLyrics = false
         }
         updateCurrentLyricLine()
@@ -409,24 +444,29 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     private var lastPositionUpdate: Date?
 
+    @objc private func progressTick() {
+        guard !isPaused else { return }
+        guard position < duration - 1 else {
+            progressTimer?.invalidate()
+            return
+        }
+        if let last = lastPositionUpdate {
+            position += Date().timeIntervalSince(last)
+        }
+        lastPositionUpdate = Date()
+        updateCurrentLyricLine()
+    }
+
     private func startProgressTimer() {
         progressTimer?.invalidate()
         lastPositionUpdate = Date()
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, !self.isPaused else { return }
-                guard self.position < self.duration - 1 else {
-                    self.progressTimer?.invalidate()
-                    return
-                }
-                if let last = self.lastPositionUpdate {
-                    let elapsed = Date().timeIntervalSince(last)
-                    self.position += elapsed
-                }
-                self.lastPositionUpdate = Date()
-                self.updateCurrentLyricLine()
-            }
-        }
+        progressTimer = Timer.scheduledTimer(
+            timeInterval: 0.15,
+            target: self,
+            selector: #selector(progressTick),
+            userInfo: nil,
+            repeats: true
+        )
     }
 
     private func stopProgressTimer() {
@@ -540,6 +580,14 @@ extension WebPlayerManager: WKScriptMessageHandler {
                 stopProgressTimer()
             } else {
                 startProgressTimer()
+            }
+            updateCurrentLyricLine()
+            MediaKeyManager.shared.updateNowPlaying(
+                track: currentTrack, isPaused: paused,
+                position: position, duration: duration
+            )
+            if UserDefaults.standard.bool(forKey: "cacheLyrics") {
+                loadLyricsIfNeeded()
             }
 
         case "error":
