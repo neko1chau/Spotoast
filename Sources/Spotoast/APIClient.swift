@@ -321,15 +321,17 @@ actor APIClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
-        if httpResponse.statusCode == 401 {
-            // Try to refresh token and retry will be handled by the caller.
+        let status = httpResponse.statusCode
+        if status == 401 {
             Task { await onUnauthorized?() }
             let body = String(data: data, encoding: .utf8) ?? "empty"
+            logger.error("API 401 \(path): \(body.prefix(200))")
             throw APIError.unauthorized(body: body)
         }
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200...299).contains(status) else {
             let body = String(data: data, encoding: .utf8) ?? "empty"
-            throw APIError.httpError(statusCode: httpResponse.statusCode, body: body)
+            logger.error("API \(status) \(path): \(body.prefix(200))")
+            throw APIError.httpError(statusCode: status, body: body)
         }
         return httpResponse
     }
@@ -368,14 +370,13 @@ actor APIClient {
         guard let url = URL(string: "\(baseURL)\(path)") else { throw APIError.invalidURL(path) }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401,
-           let handler = onUnauthorized, await handler() {
-            var retry = URLRequest(url: url)
-            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: retry)
-            try checkResponse(retryData, retryResponse, path: path)
-            return try JSONDecoder().decode(T.self, from: retryData)
+        var (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                var retry = URLRequest(url: url)
+                retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (data, response) = try await session.data(for: retry)
+            }
         }
         try checkResponse(data, response, path: path)
         return try JSONDecoder().decode(T.self, from: data)
@@ -386,15 +387,14 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401,
-           let handler = onUnauthorized, await handler() {
-            var retry = URLRequest(url: url)
-            retry.httpMethod = "PUT"
-            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: retry)
-            try checkResponse(retryData, retryResponse, path: path)
-            return
+        var (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                var retry = URLRequest(url: url)
+                retry.httpMethod = "PUT"
+                retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (data, response) = try await session.data(for: retry)
+            }
         }
         try checkResponse(data, response, path: path)
     }
@@ -404,15 +404,14 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401,
-           let handler = onUnauthorized, await handler() {
-            var retry = URLRequest(url: url)
-            retry.httpMethod = "POST"
-            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: retry)
-            try checkResponse(retryData, retryResponse, path: path)
-            return
+        var (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            if let handler = onUnauthorized, await handler() {
+                var retry = URLRequest(url: url)
+                retry.httpMethod = "POST"
+                retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                (data, response) = try await session.data(for: retry)
+            }
         }
         try checkResponse(data, response, path: path)
     }

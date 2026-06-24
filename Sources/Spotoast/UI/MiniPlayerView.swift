@@ -14,10 +14,10 @@ final class MiniPlayerController {
         let view = MiniPlayerContent()
             .environmentObject(player)
         let hostingView = NSHostingView(rootView: view)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 340, height: 80)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 320, height: 48)
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 80),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 48),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow],
             backing: .buffered,
             defer: false
@@ -35,8 +35,8 @@ final class MiniPlayerController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         if let screen = NSScreen.main {
-            let x = screen.visibleFrame.maxX - 360
-            let y = screen.visibleFrame.maxY - 100
+            let x = screen.visibleFrame.midX - 160
+            let y = screen.visibleFrame.maxY - 60
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -49,94 +49,74 @@ final class MiniPlayerController {
 
 private struct MiniPlayerContent: View {
     @EnvironmentObject var player: WebPlayerManager
-    @State private var currentLyric: String?
+    @State private var currentLyric: String = "♪"
+    @State private var lyricId: String = ""
     @State private var isHovered = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            HStack(spacing: 12) {
-                CachedAsyncImage(url: URL(string: player.currentTrack?.imageUrl ?? "")) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.08))
-                }
-                .frame(width: 48, height: 48)
-                .cornerRadius(6)
+        HStack(spacing: 10) {
+            CachedAsyncImage(url: URL(string: player.currentTrack?.imageUrl ?? "")) {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.08))
+            }
+            .frame(width: 32, height: 32)
+            .cornerRadius(6)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    if let track = player.currentTrack {
-                        Text(track.name)
-                            .font(.system(size: 12, weight: .semibold))
-                            .lineLimit(1)
-                        Text(track.artists)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    } else {
-                        Text("Not Playing")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    if let lyric = currentLyric {
-                        Text(lyric)
-                            .font(.system(size: 10))
-                            .foregroundColor(.accentColor.opacity(0.85))
-                            .lineLimit(1)
-                    }
-                }
+            Text(currentLyric)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.95))
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .id(lyricId)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: 6)),
+                    removal: .opacity.combined(with: .offset(y: -6))
+                ))
 
-                HStack(spacing: 8) {
-                    miniBtn("backward.fill", size: 11) { player.previousTrack() }
-                    miniBtn(player.isPaused ? "play.fill" : "pause.fill", size: 14) { player.togglePlay() }
-                    miniBtn("forward.fill", size: 11) { player.nextTrack() }
-                }
-
+            if isHovered {
                 Button {
                     MiniPlayerController.shared.toggle(player: player)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white.opacity(0.3))
                 }
                 .buttonStyle(.borderless)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 13)
-
-            GeometryReader { geo in
-                let pct = player.duration > 0 ? player.position / player.duration : 0
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.5))
-                    .frame(width: geo.size.width * pct, height: 2)
-            }
-            .frame(height: 2)
-            .clipped()
         }
-        .frame(width: 340, height: 80)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(height: 48)
+        .background(Color.black.opacity(0.75))
+        .background(.ultraThinMaterial.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .onHover { isHovered = $0 }
         .onChange(of: player.position) { _ in updateLyric() }
-        .onChange(of: player.lyrics.count) { _ in updateLyric() }
-    }
-
-    private func miniBtn(_ name: String, size: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name).font(.system(size: size))
+        .onChange(of: player.lyrics.count) { _ in
+            currentLyric = "♪"
+            lyricId = ""
         }
-        .buttonStyle(.borderless)
-        .foregroundColor(.primary)
     }
 
     private func updateLyric() {
         guard player.isSyncedLyrics, !player.lyrics.isEmpty else {
-            currentLyric = nil
+            if currentLyric != "♪" {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    currentLyric = "♪"
+                    lyricId = ""
+                }
+            }
             return
         }
         var best: LyricLine?
         for line in player.lyrics {
             if line.startTime <= player.position { best = line } else { break }
         }
-        currentLyric = best?.words
+        let newId = best.map { "\($0.id)" } ?? ""
+        guard newId != lyricId else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            currentLyric = best?.words ?? "♪"
+            lyricId = newId
+        }
     }
 }
