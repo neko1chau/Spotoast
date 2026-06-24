@@ -301,20 +301,33 @@ class WebPlayerManager: NSObject, ObservableObject {
         lyricsTrackId = track.id
         lyrics = []
         isLoadingLyrics = true
-        let name = track.name, artist = track.artists, dur = Int(duration)
+        let trackId = track.id, name = track.name, artist = track.artists, dur = Int(duration)
+        let cacheEnabled = UserDefaults.standard.bool(forKey: "cacheLyrics")
         Task { @MainActor in
+            if cacheEnabled, let cached = await LyricsCache.load(trackId: trackId) {
+                applyLyrics(cached)
+                isLoadingLyrics = false
+                return
+            }
             let resp = try? await api.getLyrics(trackName: name, artistName: artist, durationSec: dur)
             isLoadingLyrics = false
-            if let s = resp?.syncedLyrics, !s.isEmpty {
-                lyrics = LyricLine.parse(lrc: s)
-                isSyncedLyrics = true
-            } else if let p = resp?.plainLyrics, !p.isEmpty {
-                lyrics = p.components(separatedBy: "\n")
-                    .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                    .enumerated()
-                    .map { LyricLine(startTime: Double($0.offset), words: $0.element) }
-                isSyncedLyrics = false
+            if let resp {
+                if cacheEnabled { await LyricsCache.save(resp, trackId: trackId) }
+                applyLyrics(resp)
             }
+        }
+    }
+
+    private func applyLyrics(_ resp: LrcLibResponse) {
+        if let s = resp.syncedLyrics, !s.isEmpty {
+            lyrics = LyricLine.parse(lrc: s)
+            isSyncedLyrics = true
+        } else if let p = resp.plainLyrics, !p.isEmpty {
+            lyrics = p.components(separatedBy: "\n")
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                .enumerated()
+                .map { LyricLine(startTime: Double($0.offset), words: $0.element) }
+            isSyncedLyrics = false
         }
     }
 

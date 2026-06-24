@@ -20,7 +20,7 @@ struct TrackRow: View {
             ZStack {
                 Text("\(index + 1)")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.secondary.opacity(0.5))
                     .opacity(isHovered || isPlaying ? 0 : 1)
 
                 if isPlaying {
@@ -35,9 +35,7 @@ struct TrackRow: View {
             }
             .frame(width: 28)
 
-            AsyncImage(url: URL(string: track.album.images.first?.url ?? "")) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: track.album.images.first?.url ?? "")) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.primary.opacity(0.08))
             }
@@ -46,13 +44,23 @@ struct TrackRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.name)
-                    .font(.system(.body))
+                    .font(.system(.body, weight: .medium))
                     .lineLimit(1)
                     .foregroundColor(isCurrentTrack ? .green : .primary)
-                Text(track.artists.map(\.name).joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                Group {
+                    if let firstArtist = track.artists.first, let artistId = firstArtist.id {
+                        Text(track.artists.map(\.name).joined(separator: ", "))
+                            .onTapGesture { navigateToArtist(artistId) }
+                            .onHover { inside in
+                                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                            }
+                    } else {
+                        Text(track.artists.map(\.name).joined(separator: ", "))
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
             }
 
             Spacer()
@@ -203,7 +211,7 @@ struct PlaylistDetailView: View {
             .buttonStyle(.borderless)
         }
         .padding(.horizontal)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
 }
@@ -304,9 +312,7 @@ struct SearchResultsView: View {
 
     private func artistCard(_ artist: ArtistItem) -> some View {
         VStack(spacing: 6) {
-            AsyncImage(url: URL(string: artist.images?.first?.url ?? "")) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: artist.images?.first?.url ?? "")) {
                 Circle().fill(Color.primary.opacity(0.08))
             }
             .frame(width: 80, height: 80)
@@ -322,9 +328,7 @@ struct SearchResultsView: View {
 
     private func albumCard(_ album: AlbumItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            AsyncImage(url: URL(string: album.images?.first?.url ?? "")) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: album.images?.first?.url ?? "")) {
                 RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08))
             }
             .frame(width: 100, height: 100)
@@ -396,9 +400,7 @@ struct ArtistView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 16)], spacing: 16) {
                             ForEach(albums) { album in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    AsyncImage(url: URL(string: album.images?.first?.url ?? "")) { img in
-                                        img.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
+                                    CachedAsyncImage(url: URL(string: album.images?.first?.url ?? "")) {
                                         RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.08))
                                             .aspectRatio(1, contentMode: .fit)
                                     }
@@ -432,9 +434,7 @@ struct ArtistView: View {
 
     private func artistHeader(_ artist: ArtistItem) -> some View {
         HStack(spacing: 16) {
-            AsyncImage(url: URL(string: artist.images?.first?.url ?? "")) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: artist.images?.first?.url ?? "")) {
                 Circle().fill(Color.primary.opacity(0.08))
             }
             .frame(width: 80, height: 80)
@@ -528,9 +528,7 @@ struct AlbumView: View {
 
     private func albumHeader(_ album: AlbumItem) -> some View {
         HStack(spacing: 16) {
-            AsyncImage(url: URL(string: album.images?.first?.url ?? "")) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: album.images?.first?.url ?? "")) {
                 RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.08))
             }
             .frame(width: 120, height: 120)
@@ -718,7 +716,7 @@ struct LikedSongsView: View {
             .buttonStyle(.borderless)
         }
         .padding(.horizontal)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
 }
@@ -762,9 +760,7 @@ struct NowPlayingBar: View {
         Group {
             if let track = player.currentTrack {
                 HStack(spacing: 12) {
-                    AsyncImage(url: URL(string: track.imageUrl)) { img in
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
+                    CachedAsyncImage(url: URL(string: track.imageUrl)) {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(Color.primary.opacity(0.08))
                     }
@@ -851,7 +847,7 @@ struct NowPlayingBar: View {
                     }
             )
         }
-        .frame(height: barHovered ? 4 : 2)
+        .frame(height: barHovered ? 5 : 3)
         .onHover { barHovered = $0 }
         .animation(.easeOut(duration: 0.15), value: barHovered)
     }
@@ -904,15 +900,17 @@ struct FullPlayerView: View {
                 let w = geo.size.width
                 let h = geo.size.height
                 let leftW = w * 0.44
-                let artSize = max(min(h * 0.33, leftW - 80, 300), 60)
+                let artSize = max(min(h * 0.42, leftW * 0.65, 360), 60)
 
                 ZStack {
                     Color(nsColor: .init(white: 0.08, alpha: 1))
                     if let track = player.currentTrack {
-                        AsyncImage(url: URL(string: track.imageUrl)) { img in
-                            img.resizable().aspectRatio(contentMode: .fill)
-                                .blur(radius: 100).opacity(0.3).scaleEffect(1.5)
-                        } placeholder: { EmptyView() }
+                        AsyncImage(url: URL(string: track.imageUrl), transaction: Transaction(animation: .easeOut(duration: 0.5))) { phase in
+                            if let image = phase.image {
+                                image.resizable().aspectRatio(contentMode: .fill)
+                                    .blur(radius: 100).opacity(0.3).scaleEffect(1.5)
+                            }
+                        }
                     }
                     Color.black.opacity(0.15)
 
@@ -936,9 +934,9 @@ struct FullPlayerView: View {
                     Button(action: { withAnimation(.easeInOut(duration: 0.3)) { isPresented = false } }) {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 28, height: 28)
-                            .background(Color.white.opacity(0.1))
+                            .foregroundColor(.white.opacity(0.85))
+                            .frame(width: 30, height: 30)
+                            .background(Color.white.opacity(0.15))
                             .clipShape(Circle())
                     }
                     .buttonStyle(.borderless)
@@ -964,9 +962,7 @@ struct FullPlayerView: View {
     @ViewBuilder
     private func albumArt(size: CGFloat) -> some View {
         if let track = player.currentTrack {
-            AsyncImage(url: URL(string: track.imageUrl)) { img in
-                img.resizable().aspectRatio(contentMode: .fit)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: track.imageUrl), contentMode: .fit) {
                 RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08))
                     .aspectRatio(1, contentMode: .fit)
             }
@@ -992,7 +988,7 @@ struct FullPlayerView: View {
 
     private func progressBar(width: CGFloat) -> some View {
         let pct = isDragging ? dragProgress : (player.duration > 0 ? min(player.position / player.duration, 1) : 0)
-        let barHeight: CGFloat = isDragging ? 6 : 4
+        let barHeight: CGFloat = isDragging ? 8 : 6
 
         return VStack(spacing: 2) {
             GeometryReader { bar in
@@ -1034,12 +1030,12 @@ struct FullPlayerView: View {
     private var playbackControls: some View {
         HStack(spacing: 26) {
             iBtn("shuffle", sz: 16, c: player.isShuffled ? .green : .white.opacity(0.4)) { player.toggleShuffle() }
-            iBtn("backward.fill", sz: 22, c: .white) { player.previousTrack() }
+            iBtn("backward.fill", sz: 26, c: .white) { player.previousTrack() }
             Button(action: { player.togglePlay() }) {
                 Image(systemName: player.isPaused ? "play.circle.fill" : "pause.circle.fill")
-                    .font(.system(size: 48))
+                    .font(.system(size: 52))
             }.buttonStyle(.borderless).foregroundColor(.white)
-            iBtn("forward.fill", sz: 22, c: .white) { player.nextTrack() }
+            iBtn("forward.fill", sz: 26, c: .white) { player.nextTrack() }
             iBtn(player.repeatMode == .track ? "repeat.1" : "repeat", sz: 16,
                  c: player.repeatMode != .off ? .green : .white.opacity(0.4)) { player.cycleRepeatMode() }
         }
@@ -1190,9 +1186,7 @@ struct QueueView: View {
 
     private func queueRow(_ track: Track, isPlaying: Bool) -> some View {
         HStack(spacing: 12) {
-            AsyncImage(url: URL(string: track.imageUrl)) { img in
-                img.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: track.imageUrl)) {
                 RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.08))
             }
             .frame(width: 40, height: 40)

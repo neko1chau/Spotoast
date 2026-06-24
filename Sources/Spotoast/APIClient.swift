@@ -228,6 +228,14 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401,
+           let handler = onUnauthorized, await handler() {
+            var retry = URLRequest(url: url)
+            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: retry)
+            try checkResponse(retryData, retryResponse, path: path)
+            return try JSONDecoder().decode(T.self, from: retryData)
+        }
         try checkResponse(data, response, path: path)
         return try JSONDecoder().decode(T.self, from: data)
     }
@@ -238,6 +246,15 @@ actor APIClient {
         request.httpMethod = "PUT"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401,
+           let handler = onUnauthorized, await handler() {
+            var retry = URLRequest(url: url)
+            retry.httpMethod = "PUT"
+            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: retry)
+            try checkResponse(retryData, retryResponse, path: path)
+            return
+        }
         try checkResponse(data, response, path: path)
     }
 
@@ -247,6 +264,15 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401,
+           let handler = onUnauthorized, await handler() {
+            var retry = URLRequest(url: url)
+            retry.httpMethod = "POST"
+            retry.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: retry)
+            try checkResponse(retryData, retryResponse, path: path)
+            return
+        }
         try checkResponse(data, response, path: path)
     }
 }

@@ -43,6 +43,8 @@ struct ContentView: View {
     @State private var selectedAlbumId: String?
     @State private var showQueue = false
     @State private var navStack: [NavState] = []
+    @State private var playerSettled = false
+    @State private var playlistsCollapsed = false
 
     var body: some View {
         Group {
@@ -241,27 +243,39 @@ struct ContentView: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            if !player.isReady {
-                ContentPulse(symbol: "wifi", label: "Connecting to Spotify")
-            } else if let track = player.currentTrack {
+            if let track = player.currentTrack {
                 nowPlayingCard(track)
-            } else {
+            } else if playerSettled {
                 Image(systemName: "music.quarternote.3")
                     .font(.system(size: 48))
                     .foregroundColor(.secondary.opacity(0.3))
                 Text("Select a playlist to start")
                     .font(.subheadline)
                     .foregroundColor(.secondary.opacity(0.5))
+            } else {
+                ContentPulse(symbol: "music.quarternote.3", label: "Connecting to Spotify")
             }
         }
+        .animation(.easeOut(duration: 0.35), value: player.currentTrack?.id)
+        .animation(.easeOut(duration: 0.35), value: playerSettled)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: player.isReady) { ready in
+            if ready {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    if player.currentTrack == nil {
+                        withAnimation(.easeOut(duration: 0.3)) { playerSettled = true }
+                    }
+                }
+            }
+        }
+        .onChange(of: player.currentTrack?.id) { id in
+            if id != nil { playerSettled = true }
+        }
     }
 
     private func nowPlayingCard(_ track: Track) -> some View {
         VStack(spacing: 16) {
-            AsyncImage(url: URL(string: track.imageUrl)) { img in
-                img.resizable().aspectRatio(contentMode: .fit)
-            } placeholder: {
+            CachedAsyncImage(url: URL(string: track.imageUrl), contentMode: .fit) {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.primary.opacity(0.05))
                     .aspectRatio(1, contentMode: .fit)
@@ -335,11 +349,11 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.primary.opacity(0.04))
+            .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
             .padding(.horizontal, 12)
             .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 8)
 
             List(selection: Binding<String?>(
                 get: { showingLikedSongs ? "__liked__" : selectedPlaylistId },
@@ -359,6 +373,8 @@ struct ContentView: View {
                 }
             )) {
                 Section {
+                    sidebarHeader("Library")
+
                     Label {
                         Text("Liked Songs")
                     } icon: {
@@ -366,41 +382,39 @@ struct ContentView: View {
                             .foregroundColor(.pink)
                     }
                     .tag("__liked__")
-                } header: {
-                    Text("Library")
-                }
 
-                Section {
-                    if apiLoader.isLoadingPlaylists {
-                        Text("Loading...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
+                    sidebarHeader("Playlists", count: playlistsCollapsed ? apiLoader.playlists.count : nil) {
+                        withAnimation(.easeOut(duration: 0.25)) { playlistsCollapsed.toggle() }
                     }
-                    ForEach(apiLoader.playlists) { playlist in
-                        HStack(spacing: 10) {
-                            AsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) { img in
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.primary.opacity(0.08))
-                            }
-                            .frame(width: 32, height: 32)
-                            .cornerRadius(4)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(playlist.name)
-                                    .lineLimit(1)
-                                    .font(.system(.body))
-                                Text("\(playlist.tracks?.total ?? 0) tracks")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
+                    if !playlistsCollapsed {
+                        if apiLoader.isLoadingPlaylists {
+                            Text("Loading...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 4)
                         }
-                        .tag(playlist.id)
+                        ForEach(apiLoader.playlists) { playlist in
+                            HStack(spacing: 10) {
+                                CachedAsyncImage(url: URL(string: playlist.images?.first?.url ?? "")) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.primary.opacity(0.08))
+                                }
+                                .frame(width: 32, height: 32)
+                                .cornerRadius(4)
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(playlist.name)
+                                        .lineLimit(1)
+                                        .font(.system(size: 13))
+                                    Text("\(playlist.tracks?.total ?? 0) tracks")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .tag(playlist.id)
+                        }
                     }
-                } header: {
-                    Text("Playlists")
                 }
             }
             .listStyle(.sidebar)
@@ -446,6 +460,24 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+    }
+
+    private func sidebarHeader(_ title: String, count: Int? = nil, action: (() -> Void)? = nil) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+            if let count {
+                Text("\(count)")
+                    .foregroundColor(.secondary.opacity(0.4))
+            }
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundColor(.secondary)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { action?() }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private func setupPlayer(token: String) {
@@ -517,8 +549,11 @@ class APILoader: ObservableObject {
         guard let api = api else { return }
         isLoadingPlaylists = true
         do {
-            playlists = try await loadPlaylistsWithRetry(api: api)
-            isLoadingPlaylists = false
+            let result = try await loadPlaylistsWithRetry(api: api)
+            withAnimation(.easeOut(duration: 0.3)) {
+                playlists = result
+                isLoadingPlaylists = false
+            }
         } catch {
             let detail: String
             if let decodingError = error as? DecodingError {
@@ -527,7 +562,7 @@ class APILoader: ObservableObject {
                 detail = error.localizedDescription
             }
             self.error = "Failed to load playlists: \(detail)"
-            isLoadingPlaylists = false
+            withAnimation { isLoadingPlaylists = false }
         }
     }
 
@@ -578,11 +613,14 @@ class APILoader: ObservableObject {
         guard let api = api else { return }
         isLoadingSavedTracks = true
         do {
-            savedTracks = try await api.getSavedTracks()
-            isLoadingSavedTracks = false
+            let result = try await api.getSavedTracks()
+            withAnimation(.easeOut(duration: 0.3)) {
+                savedTracks = result
+                isLoadingSavedTracks = false
+            }
         } catch {
             self.error = "Failed to load Liked Songs: \(error.localizedDescription)"
-            isLoadingSavedTracks = false
+            withAnimation { isLoadingSavedTracks = false }
         }
     }
 
