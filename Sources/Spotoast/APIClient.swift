@@ -26,11 +26,12 @@ actor APIClient {
     // MARK: - Playlists
 
     /// Loads ALL user playlists (handles Spotify pagination automatically).
-    func getUserPlaylists(limit: Int = 50) async throws -> [Playlist] {
+    func getUserPlaylists(limit: Int = 50, maxItems: Int = 1000) async throws -> [Playlist] {
         var allItems: [Playlist] = []
         var url = "/me/playlists?limit=\(limit)"
 
-        while true {
+        while allItems.count < maxItems {
+            try Task.checkCancellation()
             let response: PaginatedResponse<Playlist> = try await get(url)
             allItems.append(contentsOf: response.items)
             if let next = response.next, let nextURL = URL(string: next),
@@ -201,10 +202,13 @@ actor APIClient {
 
     private func searchLrcLibBest(trackName: String, artistName: String) async -> LrcLibResponse? {
         guard let results = await searchLrcLib(trackName: trackName, artistName: artistName) else { return nil }
-        let matched = results.filter {
+        let exact = results.filter {
+            ($0.artistName ?? "").localizedCaseInsensitiveCompare(artistName) == .orderedSame
+        }
+        let matched = exact.isEmpty ? results.filter {
             ($0.artistName ?? "").localizedCaseInsensitiveContains(artistName) ||
             artistName.localizedCaseInsensitiveContains($0.artistName ?? "")
-        }
+        } : exact
         if let synced = matched.first(where: { $0.syncedLyrics != nil && !$0.syncedLyrics!.isEmpty }) {
             return LrcLibResponse(syncedLyrics: synced.syncedLyrics, plainLyrics: synced.plainLyrics)
         }
@@ -227,7 +231,7 @@ actor APIClient {
     }
 
     private func fetchLrcLib(path: String, params: [String: String]) async -> LrcLibResponse? {
-        var components = URLComponents(string: "https://lrclib.net\(path)")!
+        guard var components = URLComponents(string: "https://lrclib.net\(path)") else { return nil }
         components.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)
@@ -238,7 +242,7 @@ actor APIClient {
     }
 
     private func searchLrcLib(trackName: String, artistName: String) async -> [LrcLibSearchResult]? {
-        var components = URLComponents(string: "https://lrclib.net/api/search")!
+        guard var components = URLComponents(string: "https://lrclib.net/api/search") else { return nil }
         components.queryItems = [
             URLQueryItem(name: "track_name", value: trackName),
             URLQueryItem(name: "artist_name", value: artistName)
@@ -256,7 +260,7 @@ actor APIClient {
     private static let lyricsSession = URLSession(configuration: .ephemeral)
 
     private func fetchNetEaseLyrics(trackName: String, artistName: String) async -> LrcLibResponse? {
-        var searchComponents = URLComponents(string: "https://music.163.com/api/search/get")!
+        guard var searchComponents = URLComponents(string: "https://music.163.com/api/search/get") else { return nil }
         searchComponents.queryItems = [
             URLQueryItem(name: "s", value: "\(trackName) \(artistName)"),
             URLQueryItem(name: "type", value: "1"),
@@ -284,12 +288,18 @@ actor APIClient {
 
         guard let search = try? JSONDecoder().decode(NetEaseSearch.self, from: searchData),
               let songs = search.result?.songs else { return nil }
-        guard let matched = songs.first(where: {
+        let exactMatch = songs.first(where: {
+            $0.artists.contains(where: { a in
+                a.name.localizedCaseInsensitiveCompare(artistName) == .orderedSame
+            })
+        })
+        let fuzzyMatch = songs.first(where: {
             $0.artists.contains(where: { a in
                 a.name.localizedCaseInsensitiveContains(artistName) ||
                 artistName.localizedCaseInsensitiveContains(a.name)
             })
-        }) else { return nil }
+        })
+        guard let matched = exactMatch ?? fuzzyMatch else { return nil }
         let songId = matched.id
 
         guard let lyricURL = URL(string: "https://music.163.com/api/song/lyric?id=\(songId)&lv=1") else { return nil }
@@ -323,7 +333,6 @@ actor APIClient {
         }
         let status = httpResponse.statusCode
         if status == 401 {
-            Task { await onUnauthorized?() }
             let body = String(data: data, encoding: .utf8) ?? "empty"
             logger.error("API 401 \(path): \(body.prefix(200))")
             throw APIError.unauthorized(body: body)
@@ -348,7 +357,7 @@ actor APIClient {
     }
 
     func search(query: String, types: String = "track,artist,album", limit: Int = 20) async throws -> SearchResult {
-        var components = URLComponents(string: "\(baseURL)/search")!
+        guard var components = URLComponents(string: "\(baseURL)/search") else { throw APIError.invalidURL("/search") }
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "type", value: types),

@@ -1,13 +1,14 @@
 import Foundation
 
-final class AppLogger {
+final class AppLogger: @unchecked Sendable {
     static let shared = AppLogger()
     private let queue = DispatchQueue(label: "com.toast1.spotoast.logger")
-    private let maxSize = 512 * 1024 // 512KB
+    private let maxSize = 512 * 1024
 
     var logURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Spotoast", isDirectory: true)
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return dir.appendingPathComponent("Spotoast", isDirectory: true)
             .appendingPathComponent("spotoast.log")
     }
 
@@ -16,17 +17,13 @@ final class AppLogger {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
-    private let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f
-    }()
-
     func log(_ message: String, level: String = "INFO") {
-        let timestamp = formatter.string(from: Date())
-        let line = "[\(timestamp)] [\(level)] \(message)\n"
-
         queue.async { [self] in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
+            let timestamp = formatter.string(from: Date())
+            guard let lineData = "[\(timestamp)] [\(level)] \(message)\n".data(using: .utf8) else { return }
+
             let fm = FileManager.default
             let path = logURL.path
             if !fm.fileExists(atPath: path) {
@@ -39,10 +36,10 @@ final class AppLogger {
                 truncateLog()
                 guard let fh2 = FileHandle(forWritingAtPath: path) else { return }
                 fh2.seekToEndOfFile()
-                fh2.write(line.data(using: .utf8)!)
+                fh2.write(lineData)
                 fh2.closeFile()
             } else {
-                fh.write(line.data(using: .utf8)!)
+                fh.write(lineData)
                 fh.closeFile()
             }
         }
@@ -68,11 +65,16 @@ final class AppLogger {
     }
 
     private func truncateLog() {
-        guard let data = try? Data(contentsOf: logURL),
-              let content = String(data: data, encoding: .utf8) else { return }
-        let lines = content.components(separatedBy: "\n")
-        let keep = lines.suffix(lines.count / 2).joined(separator: "\n")
-        try? keep.data(using: .utf8)?.write(to: logURL)
+        guard let data = try? Data(contentsOf: logURL) else { return }
+        let keepBytes = maxSize / 2
+        if data.count > keepBytes {
+            let trimmed = data.suffix(keepBytes)
+            if let str = String(data: trimmed, encoding: .utf8),
+               let firstNewline = str.firstIndex(of: "\n") {
+                let clean = String(str[str.index(after: firstNewline)...])
+                try? clean.data(using: .utf8)?.write(to: logURL, options: .atomic)
+            }
+        }
     }
 }
 

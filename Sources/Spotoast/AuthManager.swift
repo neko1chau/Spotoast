@@ -107,10 +107,21 @@ class AuthManager: NSObject, ObservableObject {
         session?.start()
     }
 
+    private var activeRefresh: Task<Bool, Never>?
+
     @discardableResult
     func refreshAccessToken() async -> Bool {
+        if let existing = activeRefresh { return await existing.value }
+        let task = Task { await doRefreshToken() }
+        activeRefresh = task
+        let result = await task.value
+        activeRefresh = nil
+        return result
+    }
+
+    private func doRefreshToken() async -> Bool {
         guard let storedRefresh = refreshToken else { return false }
-        let tokenURL = URL(string: "https://accounts.spotify.com/api/token")!
+        guard let tokenURL = URL(string: "https://accounts.spotify.com/api/token") else { return false }
 
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"

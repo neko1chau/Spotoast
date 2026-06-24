@@ -400,6 +400,7 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+        .transaction { $0.animation = nil }
     }
 
     private var simpleSidebar: some View {
@@ -457,8 +458,7 @@ struct ContentView: View {
         List(selection: Binding<String?>(
             get: {
                 if showingLikedSongs { return "__liked__" }
-                if selectedPlaylistId != nil { return selectedPlaylistId }
-                return "__home__"
+                return selectedPlaylistId
             },
             set: { newValue in
                 showQueue = false

@@ -40,6 +40,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     private var didTransferPlayback = false
     private var lastToken: String?
     private var playbackTask: Task<Void, Never>?
+    private var commandTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -143,65 +144,42 @@ class WebPlayerManager: NSObject, ObservableObject {
         }
     }
 
-    func togglePlay() {
+    private func runCommand(_ work: @escaping (APIClient, String?) async throws -> Void, fallbackJS: String, label: String) {
         if let api {
-            Task { @MainActor in
+            commandTask?.cancel()
+            commandTask = Task { @MainActor in
                 do {
-                    if isPaused {
-                        try await api.resumePlayback(deviceId: deviceId)
-                    } else {
-                        try await api.pausePlayback(deviceId: deviceId)
-                    }
+                    try await work(api, deviceId)
                 } catch {
                     if isDeviceNotFound(error) {
                         handleDeviceNotFound()
                     } else {
-                        logger.error("Toggle play failed: \(error.localizedDescription)")
-                        self.error = "Toggle play failed: \(error.localizedDescription)"
+                        logger.error("\(label): \(error.localizedDescription)")
+                        self.error = "\(label): \(error.localizedDescription)"
                     }
                 }
             }
         } else {
-            evaluate("togglePlay()")
+            evaluate(fallbackJS)
         }
+    }
+
+    func togglePlay() {
+        let paused = isPaused
+        runCommand({ api, did in
+            if paused { try await api.resumePlayback(deviceId: did) }
+            else { try await api.pausePlayback(deviceId: did) }
+        }, fallbackJS: "togglePlay()", label: "Toggle play failed")
     }
 
     func nextTrack() {
-        if let api {
-            Task { @MainActor in
-                do {
-                    try await api.nextTrack(deviceId: deviceId)
-                } catch {
-                    if isDeviceNotFound(error) {
-                        handleDeviceNotFound()
-                    } else {
-                        logger.error("Next track failed: \(error.localizedDescription)")
-                        self.error = "Next track failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-        } else {
-            evaluate("nextTrack()")
-        }
+        runCommand({ api, did in try await api.nextTrack(deviceId: did) },
+                   fallbackJS: "nextTrack()", label: "Next track failed")
     }
 
     func previousTrack() {
-        if let api {
-            Task { @MainActor in
-                do {
-                    try await api.previousTrack(deviceId: deviceId)
-                } catch {
-                    if isDeviceNotFound(error) {
-                        handleDeviceNotFound()
-                    } else {
-                        logger.error("Previous track failed: \(error.localizedDescription)")
-                        self.error = "Previous track failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-        } else {
-            evaluate("previousTrack()")
-        }
+        runCommand({ api, did in try await api.previousTrack(deviceId: did) },
+                   fallbackJS: "previousTrack()", label: "Previous track failed")
     }
 
     func seek(to position: TimeInterval) {
@@ -270,9 +248,10 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func reorderQueue(from source: IndexSet, to destination: Int) {
+        let backup = nextTracks
         nextTracks.move(fromOffsets: source, toOffset: destination)
         guard let api, let current = currentTrack else { return }
-        let uris = [current] .map { "spotify:track:\($0.id)" } + nextTracks.map { "spotify:track:\($0.id)" }
+        let uris = [current].map { "spotify:track:\($0.id)" } + nextTracks.map { "spotify:track:\($0.id)" }
         let savedPosition = position
         Task { @MainActor in
             do {
@@ -280,7 +259,12 @@ class WebPlayerManager: NSObject, ObservableObject {
                 try await api.startPlayback(uris: uris, offset: 0, deviceId: did)
                 try await api.seekTo(positionMs: Int(savedPosition * 1000))
             } catch {
+                nextTracks = backup
                 if isDeviceNotFound(error) { handleDeviceNotFound() }
+                else {
+                    logger.error("Queue reorder failed: \(error.localizedDescription)")
+                    self.error = "Queue reorder failed"
+                }
             }
         }
     }
@@ -451,7 +435,7 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     private var lastPositionUpdate: Date?
 
-    @objc private func progressTick() {
+    private func progressTick() {
         guard !isPaused else { return }
         guard position < duration - 1 else {
             progressTimer?.invalidate()
@@ -467,13 +451,9 @@ class WebPlayerManager: NSObject, ObservableObject {
     private func startProgressTimer() {
         progressTimer?.invalidate()
         lastPositionUpdate = Date()
-        progressTimer = Timer.scheduledTimer(
-            timeInterval: 0.15,
-            target: self,
-            selector: #selector(progressTick),
-            userInfo: nil,
-            repeats: true
-        )
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.progressTick() }
+        }
     }
 
     private func stopProgressTimer() {
@@ -496,6 +476,8 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     private func recreateWebView() {
+        webView?.configuration.userContentController
+            .removeScriptMessageHandler(forName: "spotifyBridge")
         webView?.removeFromSuperview()
         webView = Self.makeWebView(handler: self)
         webView.navigationDelegate = self
@@ -650,8 +632,10 @@ extension WebPlayerManager: WKNavigationDelegate {
     nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         Task { @MainActor in
             self.processCrashed = true
-            logger.error("Web player process terminated — playback may not work")
-            self.error = "Web player process terminated — playback may not work"
+            logger.error("Web player process terminated — auto-recovering")
+            if let token = self.lastToken {
+                self.setup(with: token)
+            }
         }
     }
 

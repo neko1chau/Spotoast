@@ -1090,17 +1090,6 @@ struct FullPlayerView: View {
         }
     }
 
-    private func glassBtn(_ n: String, sz: CGFloat, frame: CGFloat, c: Color, a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            Image(systemName: n)
-                .font(.system(size: sz))
-                .foregroundColor(c)
-                .frame(width: frame, height: frame)
-                .glassCircle(fallback: Color.white.opacity(0.08))
-        }
-        .buttonStyle(.borderless)
-    }
-
     private func iBtn(_ n: String, sz: CGFloat, c: Color, a: @escaping () -> Void) -> some View {
         Button(action: a) { Image(systemName: n).font(.system(size: sz)) }
             .buttonStyle(.borderless).foregroundColor(c)
