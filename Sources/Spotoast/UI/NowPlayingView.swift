@@ -953,6 +953,7 @@ struct FullPlayerView: View {
                 .frame(width: 0, height: 0).hidden()
         }
         .onChange(of: player.currentTrack?.id) { _ in player.loadLyricsIfNeeded() }
+        .onChange(of: player.duration) { _ in player.loadLyricsIfNeeded() }
         .onAppear {
             player.loadLyricsIfNeeded()
             applyImmersiveTitleBar(true)
@@ -961,7 +962,9 @@ struct FullPlayerView: View {
             applyImmersiveTitleBar(false)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            applyImmersiveTitleBar(true)
+            if isPresented {
+                applyImmersiveTitleBar(true)
+            }
         }
     }
 
@@ -1084,7 +1087,7 @@ struct FullPlayerView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Spacer().frame(height: fadeH + 40)
                     ForEach(player.lyrics) { line in
-                        let active = player.isSyncedLyrics && line.id == currentLineId
+                        let active = player.isSyncedLyrics && line.id == player.currentLyricLineId
                         Text(line.words)
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.white.opacity(active ? 1.0 : 0.18))
@@ -1106,7 +1109,7 @@ struct FullPlayerView: View {
                         .frame(height: fadeH)
                 }
             )
-            .onChange(of: currentLineId) { id in
+            .onChange(of: player.currentLyricLineId) { id in
                 if let id {
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
                         proxy.scrollTo(id, anchor: .center)
@@ -1118,13 +1121,6 @@ struct FullPlayerView: View {
 
     // MARK: - Helpers
 
-    private var currentLineId: TimeInterval? {
-        guard player.isSyncedLyrics else { return nil }
-        var best: LyricLine?
-        for line in player.lyrics { if line.startTime <= player.position { best = line } else { break } }
-        return best?.id
-    }
-
     private func fmt(_ t: TimeInterval) -> String { "\(Int(t) / 60):\(String(format: "%02d", Int(t) % 60))" }
 
     private func applyImmersiveTitleBar(_ immersive: Bool) {
@@ -1133,6 +1129,7 @@ struct FullPlayerView: View {
                 guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
                 window.titlebarAppearsTransparent = immersive
                 window.titleVisibility = immersive ? .hidden : .visible
+                window.titlebarSeparatorStyle = immersive ? .none : .automatic
                 if immersive {
                     window.styleMask.insert(.fullSizeContentView)
                     window.collectionBehavior.insert(.fullScreenPrimary)

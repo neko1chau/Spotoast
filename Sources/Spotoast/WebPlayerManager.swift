@@ -17,6 +17,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     @Published var isSyncedLyrics = false
     @Published var nextTracks: [Track] = []
     @Published var previousTracks: [Track] = []
+    @Published var currentLyricLineId: TimeInterval?
     private var lyricsTrackId: String?
 
     var deviceId: String?
@@ -298,6 +299,7 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     func loadLyricsIfNeeded() {
         guard let track = currentTrack, let api, track.id != lyricsTrackId else { return }
+        guard duration > 0 else { return }
         lyricsTrackId = track.id
         lyrics = []
         isLoadingLyrics = true
@@ -328,6 +330,18 @@ class WebPlayerManager: NSObject, ObservableObject {
                 .enumerated()
                 .map { LyricLine(startTime: Double($0.offset), words: $0.element) }
             isSyncedLyrics = false
+        }
+        updateCurrentLyricLine()
+    }
+
+    func updateCurrentLyricLine() {
+        guard isSyncedLyrics else { return }
+        var best: LyricLine?
+        for line in lyrics {
+            if line.startTime <= position { best = line } else { break }
+        }
+        if best?.id != currentLyricLineId {
+            currentLyricLineId = best?.id
         }
     }
 
@@ -377,6 +391,7 @@ class WebPlayerManager: NSObject, ObservableObject {
                     self.position += elapsed
                 }
                 self.lastPositionUpdate = Date()
+                self.updateCurrentLyricLine()
             }
         }
     }
@@ -496,6 +511,10 @@ extension WebPlayerManager: WKScriptMessageHandler {
 
         case "error":
             let msg = body["message"] as? String ?? "Unknown error"
+            if !isReady && msg.contains("playback_error") {
+                print("[WebPlayer] Suppressed startup playback_error: \(msg)")
+                break
+            }
             sdkStatus = "Error: \(msg)"
             error = msg
 
