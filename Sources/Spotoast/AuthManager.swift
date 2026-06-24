@@ -122,8 +122,11 @@ class AuthManager: NSObject, ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let errJson = try? JSONDecoder().decode(OAuthErrorResponse.self, from: data), errJson.error != nil {
-                self.error = errJson.errorDescription ?? errJson.error ?? "Token refresh failed"
+                let msg = errJson.errorDescription ?? errJson.error ?? "Token refresh failed"
+                self.error = msg
+                logger.error("Token refresh failed: \(msg)")
                 if errJson.error == "invalid_grant" {
+                    logger.warn("invalid_grant — logging out")
                     logout()
                 }
                 return false
@@ -133,12 +136,14 @@ class AuthManager: NSObject, ObservableObject {
             if let newRefresh = json.refreshToken { refreshToken = newRefresh }
             isAuthenticated = true
             persistTokens()
+            logger.info("Token refreshed successfully")
             if let token = accessToken {
                 onTokenRefresh?(token)
             }
             return true
         } catch {
             self.error = error.localizedDescription
+            logger.error("Token refresh error: \(error.localizedDescription)")
             return false
         }
     }

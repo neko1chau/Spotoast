@@ -100,6 +100,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     func setup(with token: String) {
         lastToken = token
         if processCrashed {
+            logger.warn("WebView process crashed, reconnecting...")
             didLoadPage = false
             processCrashed = false
             isReady = false
@@ -132,6 +133,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     private func handleDeviceNotFound() {
+        logger.warn("Device not found (404), reconnecting...")
         sdkStatus = "Reconnecting..."
         deviceId = nil
         reconnect()
@@ -545,6 +547,7 @@ extension WebPlayerManager: WKScriptMessageHandler {
             deviceId = body["deviceId"] as? String
             isReady = true
             sdkStatus = "Ready"
+            logger.info("SDK ready, deviceId=\(deviceId ?? "nil")")
             if let api, let did = deviceId, !didTransferPlayback {
                 didTransferPlayback = true
                 Task { @MainActor in
@@ -593,18 +596,21 @@ extension WebPlayerManager: WKScriptMessageHandler {
         case "error":
             let msg = body["message"] as? String ?? "Unknown error"
             if msg.contains("playback_error") {
-                print("[WebPlayer] playback_error (non-fatal): \(msg)")
+                logger.warn("playback_error (non-fatal): \(msg)")
                 break
             }
             sdkStatus = "Error: \(msg)"
             error = msg
+            logger.error("SDK error: \(msg)")
 
         case "console":
             let level = body["level"] as? String ?? "log"
             let msg = body["message"] as? String ?? ""
-            print("[WebPlayer \(level)] \(msg)")
             if level == "error" {
                 sdkStatus = "JS Error: \(msg.prefix(80))"
+                logger.error("JS: \(msg)")
+            } else if level == "warn" {
+                logger.warn("JS: \(msg)")
             }
 
         default:

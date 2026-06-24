@@ -194,6 +194,7 @@ struct ContentView: View {
                 .allowsHitTesting(false)
         }
         .onAppear {
+            logger.info("App started, v\(UpdateManager.currentVersion)")
             setupPlayer(token: token)
             Task {
                 await apiLoader.configure(token: token, authManager: authManager)
@@ -201,6 +202,7 @@ struct ContentView: View {
                     player.api = api
                 }
                 await apiLoader.loadSavedTracks()
+                logger.info("Playlists loaded: \(apiLoader.playlists.count)")
             }
         }
         .onChange(of: player.error) { err in

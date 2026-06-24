@@ -15,7 +15,7 @@ class UpdateManager: ObservableObject {
 
     @AppStorage("checkForUpdates") var checkForUpdates = true
 
-    static let currentVersion = "1.3.6"
+    static let currentVersion = "1.3.7"
     private let repo = "neko1chau/Spotoast"
 
     func checkForUpdate() async {

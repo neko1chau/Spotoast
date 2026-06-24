@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var clientIdInput = ""
     @State private var cacheSize: String?
     @State private var showClearConfirm = false
+    @State private var showLogViewer = false
 
     var body: some View {
         ScrollView {
@@ -24,6 +25,8 @@ struct SettingsView: View {
                     card { cacheContent }
                     Divider().padding(.horizontal, 16)
                     card { updateContent }
+                    Divider().padding(.horizontal, 16)
+                    card { logContent }
                     Divider().padding(.horizontal, 16)
                     card(isBottom: true) { accountContent }
                 }
@@ -285,6 +288,40 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Logs
+
+    private var logContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            settingLabel("Logs")
+
+            HStack(spacing: 6) {
+                Text(logger.logSize())
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Export") {
+                    let panel = NSSavePanel()
+                    panel.nameFieldStringValue = "spotoast.log"
+                    panel.allowedContentTypes = [.plainText]
+                    if panel.runModal() == .OK, let url = panel.url {
+                        try? FileManager.default.copyItem(at: logger.logURL, to: url)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                Button("View") { showLogViewer = true }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Button("Clear") { logger.clearLog() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .sheet(isPresented: $showLogViewer) {
+            LogViewerSheet()
+        }
+    }
+
     // MARK: - Helpers
 
     private func settingLabel(_ text: String) -> some View {
@@ -310,6 +347,40 @@ struct SettingsView: View {
             Spacer()
             trailing()
         }
+    }
+}
+
+private struct LogViewerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var logText = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Application Log")
+                    .font(.headline)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(logText, forType: .string)
+                }
+                .controlSize(.small)
+                Button("Close") { dismiss() }
+                    .controlSize(.small)
+            }
+            .padding()
+
+            ScrollView {
+                Text(logText)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.primary.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(width: 600, height: 400)
+        .onAppear { logText = logger.readLog() }
     }
 }
 

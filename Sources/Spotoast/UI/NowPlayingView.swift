@@ -758,6 +758,13 @@ struct NowPlayingBar: View {
                 playbackControls
                     .frame(maxWidth: .infinity)
                 HStack(spacing: 12) {
+                    Button { MiniPlayerController.shared.toggle(player: player) } label: {
+                        Image(systemName: "pip")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.secondary)
+
                     Button { showQueue.toggle() } label: {
                         Image(systemName: "list.bullet")
                             .font(.system(size: 12))
