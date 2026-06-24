@@ -947,14 +947,22 @@ struct FullPlayerView: View {
                 Spacer()
             }
         }
-        .background { ImmersiveTitleBar() }
         .background {
             Button("") { withAnimation(.easeInOut(duration: 0.3)) { isPresented = false } }
                 .keyboardShortcut(.escape, modifiers: [])
                 .frame(width: 0, height: 0).hidden()
         }
         .onChange(of: player.currentTrack?.id) { _ in player.loadLyricsIfNeeded() }
-        .onAppear { player.loadLyricsIfNeeded() }
+        .onAppear {
+            player.loadLyricsIfNeeded()
+            applyImmersiveTitleBar(true)
+        }
+        .onDisappear {
+            applyImmersiveTitleBar(false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            applyImmersiveTitleBar(true)
+        }
     }
 
     // MARK: - Player subviews
@@ -1118,6 +1126,20 @@ struct FullPlayerView: View {
     }
 
     private func fmt(_ t: TimeInterval) -> String { "\(Int(t) / 60):\(String(format: "%02d", Int(t) % 60))" }
+
+    private func applyImmersiveTitleBar(_ immersive: Bool) {
+        for delay in stride(from: 0.0, through: 0.3, by: 0.05) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
+                window.titlebarAppearsTransparent = immersive
+                window.titleVisibility = immersive ? .hidden : .visible
+                if immersive {
+                    window.styleMask.insert(.fullSizeContentView)
+                    window.collectionBehavior.insert(.fullScreenPrimary)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Queue View
@@ -1247,38 +1269,5 @@ struct ContentPulse: View {
     }
 }
 
-private struct ImmersiveTitleBar: NSViewRepresentable {
-    class Coordinator {
-        weak var window: NSWindow?
-
-        func apply() {
-            guard let window else { return }
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.styleMask.insert(.fullSizeContentView)
-            window.collectionBehavior.insert(.fullScreenPrimary)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            context.coordinator.window = v.window
-            context.coordinator.apply()
-        }
-        return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if context.coordinator.window == nil, let w = nsView.window {
-            context.coordinator.window = w
-        }
-        context.coordinator.apply()
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {}
-}
 
 
