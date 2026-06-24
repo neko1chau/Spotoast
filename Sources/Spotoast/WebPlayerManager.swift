@@ -511,8 +511,8 @@ extension WebPlayerManager: WKScriptMessageHandler {
 
         case "error":
             let msg = body["message"] as? String ?? "Unknown error"
-            if !isReady && msg.contains("playback_error") {
-                print("[WebPlayer] Suppressed startup playback_error: \(msg)")
+            if msg.contains("playback_error") {
+                print("[WebPlayer] playback_error (non-fatal): \(msg)")
                 break
             }
             sdkStatus = "Error: \(msg)"
