@@ -37,6 +37,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     private var progressTimer: Timer?
     private var processCrashed = false
     private var didTransferPlayback = false
+    private var lastToken: String?
 
     override init() {
         super.init()
@@ -95,6 +96,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func setup(with token: String) {
+        lastToken = token
         if processCrashed {
             didLoadPage = false
             processCrashed = false
@@ -118,6 +120,19 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     // MARK: - Playback Control (via APIClient)
 
+    private func isDeviceNotFound(_ error: Error) -> Bool {
+        error.localizedDescription.contains("404")
+    }
+
+    private func handleDeviceNotFound() {
+        sdkStatus = "Reconnecting..."
+        deviceId = nil
+        reconnect()
+        if let token = lastToken {
+            setup(with: token)
+        }
+    }
+
     func togglePlay() {
         if let api {
             Task { @MainActor in
@@ -128,7 +143,11 @@ class WebPlayerManager: NSObject, ObservableObject {
                         try await api.pausePlayback(deviceId: deviceId)
                     }
                 } catch {
-                    self.error = "Toggle play failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) {
+                        handleDeviceNotFound()
+                    } else {
+                        self.error = "Toggle play failed: \(error.localizedDescription)"
+                    }
                 }
             }
         } else {
@@ -142,7 +161,11 @@ class WebPlayerManager: NSObject, ObservableObject {
                 do {
                     try await api.nextTrack(deviceId: deviceId)
                 } catch {
-                    self.error = "Next track failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) {
+                        handleDeviceNotFound()
+                    } else {
+                        self.error = "Next track failed: \(error.localizedDescription)"
+                    }
                 }
             }
         } else {
@@ -156,7 +179,11 @@ class WebPlayerManager: NSObject, ObservableObject {
                 do {
                     try await api.previousTrack(deviceId: deviceId)
                 } catch {
-                    self.error = "Previous track failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) {
+                        handleDeviceNotFound()
+                    } else {
+                        self.error = "Previous track failed: \(error.localizedDescription)"
+                    }
                 }
             }
         } else {
@@ -170,7 +197,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                 do {
                     try await api.seekTo(positionMs: Int(position * 1000))
                 } catch {
-                    self.error = "Seek failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Seek failed: \(error.localizedDescription)" }
                 }
             }
         } else {
@@ -184,7 +212,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                 do {
                     try await api.setVolume(Int(volume * 100))
                 } catch {
-                    self.error = "Volume change failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Volume change failed: \(error.localizedDescription)" }
                 }
             }
         } else {
@@ -200,7 +229,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                     try await api.setShuffle(newState, deviceId: deviceId)
                     isShuffled = newState
                 } catch {
-                    self.error = "Shuffle failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Shuffle failed: \(error.localizedDescription)" }
                 }
             }
         }
@@ -219,7 +249,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                     try await api.setRepeatMode(next.rawValue, deviceId: deviceId)
                     repeatMode = next
                 } catch {
-                    self.error = "Repeat mode failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Repeat mode failed: \(error.localizedDescription)" }
                 }
             }
         }
@@ -231,7 +262,8 @@ class WebPlayerManager: NSObject, ObservableObject {
             do {
                 try await api.addToQueue(trackId: trackId, deviceId: deviceId)
             } catch {
-                self.error = "Add to queue failed: \(error.localizedDescription)"
+                if isDeviceNotFound(error) { handleDeviceNotFound() }
+                else { self.error = "Add to queue failed: \(error.localizedDescription)" }
             }
         }
     }
@@ -246,7 +278,8 @@ class WebPlayerManager: NSObject, ObservableObject {
                     try await api.transferPlayback(deviceId: did, play: false)
                     try await api.startPlayback(uris: uris, offset: startIndex, deviceId: did)
                 } catch {
-                    self.error = "Play failed: \(error.localizedDescription)"
+                    if isDeviceNotFound(error) { handleDeviceNotFound() }
+                    else { self.error = "Play failed: \(error.localizedDescription)" }
                 }
             }
         } else {
