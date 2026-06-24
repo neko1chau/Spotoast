@@ -42,7 +42,7 @@ class AuthManager: NSObject, ObservableObject {
         KeychainHelper.save(key: "client_id", value: clientId)
     }
     private let redirectUri = "spotoast://callback"
-    private let scopes = "streaming user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-read-private user-library-read"
+    private let scopes = "streaming user-read-email user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-read-private user-library-read"
 
     private var codeVerifier: String?
 
