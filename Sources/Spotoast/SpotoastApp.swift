@@ -13,7 +13,7 @@ struct SpotoastApp: App {
                 .frame(minWidth: 900, minHeight: 560)
                 .onAppear { appearanceMode.apply() }
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
 
         Settings {

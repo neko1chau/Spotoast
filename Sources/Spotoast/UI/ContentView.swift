@@ -44,6 +44,7 @@ struct ContentView: View {
     @State private var playerSettled = false
     @State private var playlistsCollapsed = false
     @State private var settledTask: Task<Void, Never>?
+    @StateObject private var albumColor = AlbumColorLoader()
     @AppStorage("playlistGridView") private var playlistGridView = false
     @AppStorage("simpleMode") private var simpleMode = false
 
@@ -86,6 +87,10 @@ struct ContentView: View {
     @ViewBuilder
     private func mainContent(token: String) -> some View {
         ZStack {
+            // Phase 0: ambient background driven by current track's album color
+            ambientBackground
+                .ignoresSafeArea()
+
             if !showFullPlayer {
                 VStack(spacing: 0) {
                     NavigationSplitView {
@@ -139,6 +144,9 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationSplitViewStyle(.prominentDetail)
+                    .scrollContentBackground(.hidden)
+                    .toolbarBackground(.hidden)
                     .environment(\.navigateToArtist, { id in
                         withAnimation(.easeInOut(duration: 0.25)) {
                             pushNav()
@@ -195,6 +203,10 @@ struct ContentView: View {
                 await apiLoader.loadSavedTracks()
                 logger.info("Playlists loaded: \(apiLoader.playlists.count)")
             }
+        }
+        .onAppear { albumColor.load(urlString: player.currentTrack?.imageUrl) }
+        .onChange(of: player.currentTrack?.imageUrl) { url in
+            albumColor.load(urlString: url)
         }
         .onChange(of: player.error) { err in
             if let err {
@@ -277,6 +289,7 @@ struct ContentView: View {
             }
             .frame(width: 200, height: 200)
             .cornerRadius(10)
+            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
             .padding(.top, 8)
             .padding(.horizontal, 8)
 
@@ -296,10 +309,59 @@ struct ContentView: View {
             .padding(.horizontal, 16)
         }
         .frame(width: 216)
-        .glassCard(cornerRadius: 14)
-        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+        .glassCard(cornerRadius: 14, clear: true)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.5), .white.opacity(0.05), .black.opacity(0.04)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .background(
+            // Sampled album color, confined to the card footprint so the glass
+            // has something to refract — without flooding the whole page.
+            RoundedRectangle(cornerRadius: 14)
+                .fill(albumColor.color ?? .clear)
+                .blur(radius: 40)
+                .opacity(0.55)
+                .scaleEffect(1.15)
+        )
+        .background(
+            // Grounded contact shadow directly beneath the glass slab
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.black)
+                .blur(radius: 28)
+                .opacity(0.22)
+                .scaleEffect(x: 0.95, y: 0.93)
+                .offset(y: 18)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 40, y: 20)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
+    }
+
+    @ViewBuilder
+    private var ambientBackground: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            if let c = albumColor.color {
+                // Two offset radial washes for organic feel
+                Circle()
+                    .fill(c.opacity(0.15))
+                    .blur(radius: 120)
+                    .scaleEffect(x: 1.2, y: 1.0)
+                    .offset(x: -60, y: -40)
+                Circle()
+                    .fill(c.opacity(0.10))
+                    .blur(radius: 100)
+                    .scaleEffect(x: 1.0, y: 1.3)
+                    .offset(x: 80, y: 60)
+            }
+        }
     }
 
     private func detailWithBack<Content: View>(action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
@@ -581,6 +643,7 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .scrollIndicators(.never)
     }
 

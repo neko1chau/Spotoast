@@ -1,5 +1,24 @@
 import SwiftUI
 
+private struct TopRoundedRect: Shape {
+    var radius: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.minX + radius, y: rect.minY),
+                 radius: radius)
+        p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.maxX, y: rect.minY + radius),
+                 radius: radius)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 // MARK: - Shared Track Row
 
 struct TrackRow: View {
@@ -784,7 +803,7 @@ struct NowPlayingBar: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
         }
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12))
+        .clipShape(TopRoundedRect(radius: 12))
         .glassBar()
     }
 
@@ -836,10 +855,12 @@ struct NowPlayingBar: View {
 
             Button(action: { player.togglePlay() }) {
                 Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary)
+                    .frame(width: 36, height: 36)
+                    .glassCircle(fallback: Color.primary.opacity(0.08))
             }
             .buttonStyle(.borderless)
-            .foregroundColor(.primary)
 
             Button(action: { player.nextTrack() }) {
                 Image(systemName: "forward.fill")
@@ -1082,8 +1103,11 @@ struct FullPlayerView: View {
             iBtn("backward.fill", sz: 22, c: .white) { player.previousTrack() }
             Button(action: { player.togglePlay() }) {
                 Image(systemName: player.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 32))
-            }.buttonStyle(.borderless).foregroundColor(.white)
+                    .font(.system(size: 22))
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .glassCircle(fallback: Color.white.opacity(0.15))
+            }.buttonStyle(.borderless)
             iBtn("forward.fill", sz: 22, c: .white) { player.nextTrack() }
             iBtn(player.repeatMode == .track ? "repeat.1" : "repeat", sz: 16,
                  c: player.repeatMode != .off ? .green : .white.opacity(0.4)) { player.cycleRepeatMode() }
@@ -1249,6 +1273,7 @@ struct QueueView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

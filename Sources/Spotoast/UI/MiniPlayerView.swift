@@ -18,7 +18,7 @@ final class MiniPlayerController {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 48),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow, .resizable],
+            styleMask: [.nonactivatingPanel, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -59,7 +59,7 @@ private struct MiniPlayerContent: View {
         HStack(spacing: 8) {
             CachedAsyncImage(url: URL(string: player.currentTrack?.imageUrl ?? "")) {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.primary.opacity(0.08))
             }
             .frame(width: 30, height: 30)
             .cornerRadius(5)
@@ -89,7 +89,7 @@ private struct MiniPlayerContent: View {
         .padding(9)
         .frame(maxWidth: .infinity)
         .frame(height: 48)
-        .glassBackground(cornerRadius: 10, fallback: Color.black.opacity(0.75))
+        .glassCard(cornerRadius: 10, clear: true)
         .onHover { isHovered = $0 }
         .onChange(of: player.position) { _ in updateLyric() }
         .onChange(of: player.lyrics.count) { _ in
