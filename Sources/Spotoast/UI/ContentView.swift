@@ -603,6 +603,10 @@ struct ContentView: View {
     }
 
     private func setupPlayer(token: String) {
+        player.refreshTokenHandler = { [weak authManager] in
+            guard let auth = authManager else { return nil }
+            return await auth.refreshAccessToken() ? auth.accessToken : nil
+        }
         player.setup(with: token)
         MediaKeyManager.shared.start(player: player)
     }

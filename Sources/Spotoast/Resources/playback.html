@@ -58,14 +58,22 @@ window.onSpotifyWebPlaybackSDKReady = () => {
   });
 
   player.activateElement();
+  connectWithRetry(0);
+};
+
+function connectWithRetry(attempt) {
   player.connect().then(success => {
-    if (!success) {
+    if (!success && attempt < 2) {
       window.webkit.messageHandlers.spotifyBridge.postMessage({
-        type: 'error', message: 'SDK connect() returned false'
+        type: 'connectFailed', attempt: attempt
+      });
+    } else if (!success) {
+      window.webkit.messageHandlers.spotifyBridge.postMessage({
+        type: 'error', message: 'SDK connect() failed after retries — check Premium status'
       });
     }
   });
-};
+}
 
 function updateToken(token) {
   window.spotifyToken = token;

@@ -10,7 +10,7 @@ struct SpotoastApp: App {
         WindowGroup("Spotoast") {
             ContentView()
                 .environmentObject(authManager)
-                .frame(minWidth: 1300, minHeight: 780)
+                .frame(minWidth: 900, minHeight: 560)
                 .onAppear { appearanceMode.apply() }
         }
         .windowStyle(.titleBar)

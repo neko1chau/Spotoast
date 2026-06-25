@@ -23,6 +23,7 @@ class WebPlayerManager: NSObject, ObservableObject {
 
     var deviceId: String?
     /// Set this to route playback commands through APIClient instead of JS.
+    var refreshTokenHandler: (() async -> String?)?
     weak var api: APIClient? {
         didSet {
             guard api !== oldValue, let api, let did = deviceId, isReady, !didTransferPlayback else { return }
@@ -178,8 +179,13 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func previousTrack() {
-        runCommand({ api, did in try await api.previousTrack(deviceId: did) },
-                   fallbackJS: "previousTrack()", label: "Previous track failed")
+        if position > 3 {
+            seek(to: 0)
+            position = 0
+        } else {
+            runCommand({ api, did in try await api.previousTrack(deviceId: did) },
+                       fallbackJS: "previousTrack()", label: "Previous track failed")
+        }
     }
 
     func seek(to position: TimeInterval) {
@@ -584,16 +590,28 @@ extension WebPlayerManager: WKScriptMessageHandler {
                 loadLyricsIfNeeded()
             }
 
+        case "connectFailed":
+            let attempt = body["attempt"] as? Int ?? 0
+            logger.warn("SDK connect() failed (attempt \(attempt)), refreshing token...")
+            sdkStatus = "Reconnecting..."
+            Task { @MainActor in
+                if let newToken = await refreshTokenHandler?() {
+                    updateToken(newToken)
+                    evaluate("connectWithRetry(\(attempt + 1))")
+                } else {
+                    sdkStatus = "Connection failed"
+                    error = "SDK connect failed — try logging out and back in"
+                }
+            }
+
         case "error":
             let msg = body["message"] as? String ?? "Unknown error"
             if msg.contains("playback_error") {
                 logger.warn("playback_error (non-fatal): \(msg)")
                 break
             }
-            if msg.contains("Invalid token scopes") || msg.contains("authentication_error") {
-                logger.error("SDK auth error (re-login required): \(msg)")
-                sdkStatus = "Scope error — please logout and re-login"
-                error = "Token scopes outdated. Please logout from Settings and re-login to fix."
+            if msg.contains("authentication_error") {
+                logger.warn("SDK auth warning (usually recovers): \(msg)")
                 break
             }
             sdkStatus = "Error: \(msg)"
