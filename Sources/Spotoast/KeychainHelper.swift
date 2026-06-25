@@ -1,56 +1,66 @@
 import Foundation
+import Security
 
 enum KeychainHelper {
-    private static let lock = NSLock()
-
-    private static var storageURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory,
-                                            in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("spotoast_tokens.json")
-    }
+    private static let service = "com.toast1.spotoast"
 
     static func save(key: String, value: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        var dict = readAllUnsafe() ?? [:]
-        dict[key] = value
-        writeAllUnsafe(dict)
+        guard let data = value.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+        var add = query
+        add[kSecValueData as String] = data
+        SecItemAdd(add as CFDictionary, nil)
     }
 
     static func read(key: String) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return readAllUnsafe()?[key]
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let str = String(data: data, encoding: .utf8) else { return nil }
+        return str
     }
 
     static func delete(key: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard var dict = readAllUnsafe() else { return }
-        dict.removeValue(forKey: key)
-        writeAllUnsafe(dict)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     static func clearAll() {
-        lock.lock()
-        defer { lock.unlock() }
-        try? FileManager.default.removeItem(at: storageURL)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
-    private static func readAllUnsafe() -> [String: String]? {
-        guard let data = try? Data(contentsOf: storageURL),
-              let dict = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return nil }
-        return dict
-    }
-
-    private static func writeAllUnsafe(_ dict: [String: String]) {
-        let url = storageURL
-        guard let data = try? JSONEncoder().encode(dict) else { return }
-        try? data.write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: url.path)
+    /// One-time migration from the old JSON file to real Keychain.
+    static func migrateIfNeeded() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let oldFile = dir.appendingPathComponent("spotoast_tokens.json")
+        guard FileManager.default.fileExists(atPath: oldFile.path),
+              let data = try? Data(contentsOf: oldFile),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return }
+        for (key, value) in dict {
+            save(key: key, value: value)
+        }
+        try? FileManager.default.removeItem(at: oldFile)
     }
 }

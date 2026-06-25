@@ -476,7 +476,12 @@ class WebPlayerManager: NSObject, ObservableObject {
             error = "Failed to load playback.html"
             return
         }
-        let escaped = token.replacingOccurrences(of: "'", with: "\\'")
+        let escaped = token
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "</", with: "<\\/")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
         html = html.replacingOccurrences(of: "<!--TOKEN-->", with: escaped)
         webView.loadHTMLString(html, baseURL: URL(string: "https://sdk.scdn.co"))
     }

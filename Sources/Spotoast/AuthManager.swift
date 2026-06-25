@@ -22,6 +22,7 @@ class AuthManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        KeychainHelper.migrateIfNeeded()
         clientId = KeychainHelper.read(key: "client_id")
             ?? ProcessInfo.processInfo.environment["SPOTIFY_CLIENT_ID"]
             ?? ""
