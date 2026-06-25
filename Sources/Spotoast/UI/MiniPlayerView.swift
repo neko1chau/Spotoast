@@ -66,7 +66,7 @@ private struct MiniPlayerContent: View {
 
             Text(currentLyric)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.95))
+                .foregroundColor(.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(lyricId)
@@ -81,7 +81,7 @@ private struct MiniPlayerContent: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.borderless)
             }
