@@ -62,15 +62,15 @@ struct ContentView: View {
         }
         .onChange(of: authManager.error) { err in
             if let err {
-                alertTitle = "Auth Error"
-                alertMessage = err
+                alertTitle = "Authentication Failed"
+                alertMessage = friendlyError(err)
                 showAlert = true
             }
         }
         .onChange(of: apiLoader.error) { err in
             if let err {
-                alertTitle = "API Error"
-                alertMessage = err
+                alertTitle = "Something Went Wrong"
+                alertMessage = friendlyError(err)
                 showAlert = true
             }
         }
@@ -185,6 +185,20 @@ struct ContentView: View {
                     .zIndex(1)
             }
         }
+        .overlay(alignment: .top) {
+            if let msg = player.queuedMessage {
+                Text(msg)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .glassCard(cornerRadius: 8)
+                    .shadow(color: .black.opacity(0.1), radius: 10, y: 4)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.25), value: player.queuedMessage)
+            }
+        }
         .frame(minHeight: 500)
         .background {
             HiddenWebView(manager: player)
@@ -210,8 +224,8 @@ struct ContentView: View {
         }
         .onChange(of: player.error) { err in
             if let err {
-                alertTitle = "Player Error"
-                alertMessage = err
+                alertTitle = "Playback Issue"
+                alertMessage = friendlyError(err)
                 showAlert = true
             }
         }
@@ -219,6 +233,22 @@ struct ContentView: View {
             if !showing { player.error = nil }
         }
         .modifier(PlayerKeyboardShortcuts(player: player))
+    }
+
+    private func friendlyError(_ raw: String) -> String {
+        if raw.contains("401") || raw.contains("unauthorized") || raw.contains("Token expired") {
+            return "Your session has expired. Try logging out and back in."
+        }
+        if raw.contains("403") { return "You don't have permission for this content." }
+        if raw.contains("404") { return "Player device not found. Try restarting playback." }
+        if raw.contains("429") { return "Too many requests. Please wait a moment." }
+        if raw.contains("503") || raw.contains("connect error") { return "Spotify is temporarily unavailable. Try again shortly." }
+        if raw.contains("network") || raw.contains("offline") || raw.contains("NSURLError") {
+            return "Network connection issue. Check your internet."
+        }
+        if raw.contains("CodingKey") || raw.contains("DecodingError") { return "Unexpected response from Spotify. Try again." }
+        if raw.count > 120 { return String(raw.prefix(120)) + "…" }
+        return raw
     }
 
     private func pushNav() {
@@ -310,36 +340,7 @@ struct ContentView: View {
         }
         .frame(width: 216)
         .glassCard(cornerRadius: 14, clear: true)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.5), .white.opacity(0.05), .black.opacity(0.04)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .background(
-            // Sampled album color, confined to the card footprint so the glass
-            // has something to refract — without flooding the whole page.
-            RoundedRectangle(cornerRadius: 14)
-                .fill(albumColor.color ?? .clear)
-                .blur(radius: 40)
-                .opacity(0.55)
-                .scaleEffect(1.15)
-        )
-        .background(
-            // Grounded contact shadow directly beneath the glass slab
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.black)
-                .blur(radius: 28)
-                .opacity(0.22)
-                .scaleEffect(x: 0.95, y: 0.93)
-                .offset(y: 18)
-        )
-        .shadow(color: .black.opacity(0.10), radius: 40, y: 20)
+        .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeInOut(duration: 0.3)) { showFullPlayer = true } }
     }
@@ -680,16 +681,20 @@ struct ContentView: View {
 struct PlayerKeyboardShortcuts: ViewModifier {
     @ObservedObject var player: WebPlayerManager
 
+    private var isTextFieldFocused: Bool {
+        NSApp.keyWindow?.firstResponder is NSTextView
+    }
+
     func body(content: Content) -> some View {
         content
             .background {
-                Button("") { player.togglePlay() }
+                Button("") { if !isTextFieldFocused { player.togglePlay() } }
                     .keyboardShortcut(.space, modifiers: [])
                     .frame(width: 0, height: 0).hidden()
-                Button("") { player.nextTrack() }
+                Button("") { if !isTextFieldFocused { player.nextTrack() } }
                     .keyboardShortcut(.rightArrow, modifiers: [])
                     .frame(width: 0, height: 0).hidden()
-                Button("") { player.previousTrack() }
+                Button("") { if !isTextFieldFocused { player.previousTrack() } }
                     .keyboardShortcut(.leftArrow, modifiers: [])
                     .frame(width: 0, height: 0).hidden()
             }
@@ -717,14 +722,15 @@ class APILoader: ObservableObject {
     private weak var authManager: AuthManager?
 
     private let maxCachedPlaylists = 50
+    private var playlistAccessOrder: [String] = []
 
     func configure(token: String, authManager: AuthManager) async {
         let client = APIClient(accessToken: token)
         api = client
         self.authManager = authManager
 
-        authManager.onTokenRefresh = { newToken in
-            Task { await client.updateToken(newToken) }
+        authManager.onTokenRefresh = { [weak client] newToken in
+            Task { await client?.updateToken(newToken) }
         }
 
         await client.setUnauthorizedHandler { [weak self] in
@@ -800,11 +806,13 @@ class APILoader: ObservableObject {
     }
 
     private func setTracks(_ tracks: [PlaylistTrack], for playlistId: String) {
-        if playlistTracks.count >= maxCachedPlaylists, playlistTracks[playlistId] == nil {
-            if let oldestKey = playlistTracks.keys.first {
-                playlistTracks.removeValue(forKey: oldestKey)
-            }
+        playlistAccessOrder.removeAll { $0 == playlistId }
+        if playlistTracks.count >= maxCachedPlaylists, playlistTracks[playlistId] == nil,
+           let oldest = playlistAccessOrder.first {
+            playlistAccessOrder.removeFirst()
+            playlistTracks.removeValue(forKey: oldest)
         }
+        playlistAccessOrder.append(playlistId)
         playlistTracks[playlistId] = tracks
     }
 

@@ -885,16 +885,16 @@ struct NowPlayingBar: View {
             let progress = player.duration > 0 ? player.position / player.duration : 0
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(Color.primary.opacity(barHovered ? 0.12 : 0.04))
+                    .fill(Color.primary.opacity(barHovered ? 0.10 : 0))
                 Rectangle()
-                    .fill(Color.green.opacity(barHovered ? 1.0 : 0.4))
+                    .fill(Color.green.opacity(barHovered ? 1.0 : 0.5))
                     .frame(width: geo.size.width * progress)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onEnded { value in
-                        let fraction = value.location.x / geo.size.width
+                        let fraction = value.location.x / max(1, geo.size.width)
                         let pos = max(0, min(player.duration, player.duration * fraction))
                         player.seek(to: pos)
                     }
@@ -927,7 +927,7 @@ struct NowPlayingBar: View {
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
                     .onChanged { v in
-                        volume = max(0, min(1, v.location.x / geo.size.width))
+                        volume = max(0, min(1, v.location.x / max(1, geo.size.width)))
                         player.setVolume(volume)
                     }
                 )
@@ -1056,26 +1056,31 @@ struct FullPlayerView: View {
         }
     }
 
+    @State private var progressHovered = false
+
     private func progressBar(width: CGFloat) -> some View {
         let pct = isDragging ? dragProgress : (player.duration > 0 ? min(player.position / player.duration, 1) : 0)
-        let barHeight: CGFloat = isDragging ? 8 : 6
+        let active = isDragging || progressHovered
+        let barHeight: CGFloat = active ? 6 : 3
 
         return VStack(spacing: 2) {
             GeometryReader { bar in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.18))
-                    Capsule().fill(Color.white).frame(width: bar.size.width * pct)
+                    Capsule().fill(Color.white.opacity(active ? 0.18 : 0.08))
+                    Capsule().fill(Color.white.opacity(active ? 0.9 : 0.35))
+                        .frame(width: max(barHeight, bar.size.width * pct))
                 }
                 .frame(height: barHeight)
+                .animation(.easeOut(duration: 0.15), value: active)
                 .position(x: bar.size.width / 2, y: bar.size.height / 2)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
                     .onChanged { v in
                         isDragging = true
-                        dragProgress = max(0, min(1, v.location.x / bar.size.width))
+                        dragProgress = max(0, min(1, v.location.x / max(1, bar.size.width)))
                     }
                     .onEnded { v in
-                        let fraction = max(0, min(1, v.location.x / bar.size.width))
+                        let fraction = max(0, min(1, v.location.x / max(1, bar.size.width)))
                         dragProgress = fraction
                         player.seek(to: player.duration * fraction)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -1093,6 +1098,7 @@ struct FullPlayerView: View {
             .font(.system(size: 11, design: .monospaced))
             .foregroundColor(.white.opacity(0.4))
         }
+        .onHover { progressHovered = $0 }
         .frame(width: min(width, 340))
         .animation(.easeOut(duration: 0.15), value: isDragging)
     }

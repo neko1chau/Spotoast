@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var clientIdInput = ""
     @State private var cacheSize: String?
     @State private var showClearConfirm = false
+    @State private var showLogoutConfirm = false
     @State private var showLogViewer = false
 
     var body: some View {
@@ -136,9 +137,15 @@ struct SettingsView: View {
                 .font(.caption)
 
                 Button(role: .destructive) {
-                    authManager.logout()
+                    showLogoutConfirm = true
                 } label: {
                     Text("Logout")
+                }
+                .confirmationDialog("Log out of Spotify?", isPresented: $showLogoutConfirm) {
+                    Button("Logout", role: .destructive) { authManager.logout() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("You will need to re-authenticate with Spotify.")
                 }
             }
 

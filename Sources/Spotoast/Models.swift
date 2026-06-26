@@ -169,10 +169,13 @@ struct LrcLibSearchResult: Codable {
 struct LyricLine: Identifiable {
     let startTime: TimeInterval
     let words: String
-    var id: TimeInterval { startTime }
+    let index: Int
+    var id: Double { startTime + Double(index) * 0.0001 }
 
     static func parse(lrc: String) -> [LyricLine] {
-        lrc.components(separatedBy: "\n").compactMap { line in
+        var idx = 0
+        return lrc.components(separatedBy: "\n").compactMap { line -> LyricLine? in
+            defer { idx += 1 }
             guard line.hasPrefix("["),
                   let closeBracket = line.firstIndex(of: "]") else { return nil }
             let timeStr = String(line[line.index(after: line.startIndex)..<closeBracket])
@@ -182,7 +185,7 @@ struct LyricLine: Identifiable {
             guard parts.count == 2,
                   let min = Double(parts[0]),
                   let sec = Double(parts[1]) else { return nil }
-            return LyricLine(startTime: min * 60 + sec, words: text)
+            return LyricLine(startTime: min * 60 + sec, words: text, index: idx)
         }
     }
 }

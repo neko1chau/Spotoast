@@ -42,6 +42,8 @@ class WebPlayerManager: NSObject, ObservableObject {
     private var lastToken: String?
     private var playbackTask: Task<Void, Never>?
     private var commandTask: Task<Void, Never>?
+    private var volumeTask: Task<Void, Never>?
+    private var pendingVolume: Int?
 
     override init() {
         super.init()
@@ -204,14 +206,22 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     func setVolume(_ volume: Double) {
+        let vol = Int(volume * 100)
         if let api {
-            Task { @MainActor in
-                do {
-                    try await api.setVolume(Int(volume * 100))
-                } catch {
-                    if isDeviceNotFound(error) { handleDeviceNotFound() }
-                    else { self.error = "Volume change failed: \(error.localizedDescription)" }
+            pendingVolume = vol
+            guard volumeTask == nil else { return }
+            volumeTask = Task { @MainActor in
+                while let v = pendingVolume {
+                    pendingVolume = nil
+                    do {
+                        try await api.setVolume(v)
+                    } catch {
+                        if isDeviceNotFound(error) { handleDeviceNotFound() }
+                        else { self.error = "Volume change failed: \(error.localizedDescription)" }
+                    }
+                    try? await Task.sleep(nanoseconds: 200_000_000)
                 }
+                volumeTask = nil
             }
         } else {
             evaluate("changeVolume(\(max(0, min(1, volume))))")
@@ -275,14 +285,19 @@ class WebPlayerManager: NSObject, ObservableObject {
         }
     }
 
+    @Published var queuedMessage: String?
+
     func addToQueue(trackId: String) {
         guard let api else { return }
         Task { @MainActor in
             do {
                 try await api.addToQueue(trackId: trackId, deviceId: deviceId)
+                queuedMessage = "Added to queue"
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if queuedMessage == "Added to queue" { queuedMessage = nil }
             } catch {
                 if isDeviceNotFound(error) { handleDeviceNotFound() }
-                else { self.error = "Add to queue failed: \(error.localizedDescription)" }
+                else { self.error = "Add to queue failed" }
             }
         }
     }
@@ -390,7 +405,7 @@ class WebPlayerManager: NSObject, ObservableObject {
             lyrics = p.components(separatedBy: "\n")
                 .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                 .enumerated()
-                .map { LyricLine(startTime: Double($0.offset), words: $0.element) }
+                .map { LyricLine(startTime: Double($0.offset), words: $0.element, index: $0.offset) }
             isSyncedLyrics = false
         } else {
             lyrics = []
@@ -428,6 +443,7 @@ class WebPlayerManager: NSObject, ObservableObject {
     }
 
     private func evaluate(_ script: String) {
+        guard let webView else { return }
         webView.evaluateJavaScript(script) { [weak self] _, error in
             if let error = error {
                 Task { @MainActor in
