@@ -3,6 +3,7 @@ import MediaPlayer
 
 @main
 struct SpotoastApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var authManager = AuthManager()
     @AppStorage("appearanceMode") private var appearanceMode = AppearanceMode.auto
 
@@ -86,5 +87,33 @@ final class MediaKeyManager {
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = isPaused ? .paused : .playing
+    }
+}
+
+// MARK: - AppDelegate
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            sender.windows.first?.makeKeyAndOrderFront(nil)
+        }
+        return true
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Intercept window close to hide instead of destroy
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let window = note.object as? NSWindow,
+                  window.title.contains("Spotoast") else { return }
+            window.orderOut(nil)
+        }
     }
 }
