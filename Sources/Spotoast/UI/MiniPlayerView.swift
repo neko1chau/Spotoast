@@ -66,7 +66,7 @@ private struct MiniPlayerContent: View {
 
             Text(currentLyric)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundColor(.white.opacity(0.95))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(lyricId)
@@ -81,7 +81,7 @@ private struct MiniPlayerContent: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.4))
                 }
                 .buttonStyle(.borderless)
             }
@@ -89,7 +89,8 @@ private struct MiniPlayerContent: View {
         .padding(9)
         .frame(maxWidth: .infinity)
         .frame(height: 48)
-        .glassCard(cornerRadius: 10, clear: true)
+        .background(Color.black.opacity(0.55), in: .rect(cornerRadius: 10))
+        .glassCard(cornerRadius: 10)
         .onHover { isHovered = $0 }
         .onChange(of: player.position) { _ in updateLyric() }
         .onChange(of: player.lyrics.count) { _ in
